@@ -16,7 +16,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        SuzukiConnectDeviceTracker(coordinator, cid) for cid in coordinator.data.vehicles
+        SuzukiConnectDeviceTracker(coordinator, cid) for cid in coordinator.vehicles
     )
 
 

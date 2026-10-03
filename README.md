@@ -53,7 +53,7 @@ Assistant only; they are not sent to the car or to Suzuki.
 
 ## Requirements
 
-- Home Assistant 2024.8 or newer.
+- Home Assistant 2024.12 or newer.
 - A Suzuki Connect account with an active subscription on an EU vehicle.
 
 ## Installation (HACS)

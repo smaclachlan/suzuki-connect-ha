@@ -184,7 +184,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities(
         SuzukiConnectBinarySensor(coordinator, cid, d)
-        for cid in coordinator.data.vehicles
+        for cid in coordinator.vehicles
         for d in BINARY_SENSORS
     )
 

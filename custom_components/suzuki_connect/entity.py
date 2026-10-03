@@ -17,7 +17,7 @@ class SuzukiConnectEntity(CoordinatorEntity[SuzukiConnectCoordinator]):
         self, coordinator: SuzukiConnectCoordinator, contract_id: int, key: str
     ) -> None:
         super().__init__(coordinator)
-        vehicle = coordinator.data.vehicles[contract_id].vehicle
+        vehicle = coordinator.vehicles[contract_id]
         self._contract_id = contract_id
         self._attr_unique_id = f"{contract_id}_{key}"
         self._attr_device_info = DeviceInfo(
@@ -39,4 +39,6 @@ class SuzukiConnectEntity(CoordinatorEntity[SuzukiConnectCoordinator]):
 
     @property
     def _status(self):
-        return self._vehicle_data.status  # type: ignore[union-attr]
+        """The latest status; None until this car has reported once."""
+        vdata = self._vehicle_data
+        return vdata.status if vdata else None
