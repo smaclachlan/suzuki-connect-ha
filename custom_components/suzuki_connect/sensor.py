@@ -14,9 +14,24 @@ from homeassistant.components.sensor import (
 from homeassistant.const import PERCENTAGE, UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import SuzukiConfigEntry
 from .entity import SuzukiConnectEntity
+
+
+def _as_local(value):
+    """Make the API's naive 'last reported' time timezone-aware.
+
+    The API reports it in the vehicle's local time (which matches the owner's
+    Home Assistant timezone), so a TIMESTAMP sensor needs it tz-aware or HA
+    rejects it as unavailable.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return value
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,7 +88,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         translation_key="last_updated",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_registry_enabled_default=True,
-        value_fn=lambda s: s.last_updated,
+        value_fn=lambda s: _as_local(s.last_updated),
     ),
 )
 
