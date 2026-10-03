@@ -124,6 +124,49 @@ async def test_login_server_error_is_not_an_auth_error(backend, clock):
         await _client(backend).async_get_vehicles()
 
 
+async def test_login_server_error_with_body_errors_is_not_an_auth_error(backend, clock):
+    # Body errors used to win over the status, so a 5xx carrying one (e.g. a
+    # maintenance notice) looked like bad credentials and started reauth.
+    backend.session.route(
+        "POST", const.EP_LOGIN,
+        lambda call: (503, error_envelope(500001, "Service under maintenance")),
+    )
+    with pytest.raises(SuzukiApiError) as exc:
+        await _client(backend).async_get_vehicles()
+    assert not isinstance(exc.value, SuzukiAuthError)
+    assert exc.value.status == 503
+
+
+async def test_refresh_server_error_keeps_refresh_token(backend, clock):
+    # A transient 5xx on refresh must not discard a working refresh token and
+    # fall back to a forced login that logs the owner's phone out.
+    client = _client(backend)
+    await client.async_get_vehicles()
+    refresh_token = client.auth.refresh_token
+    clock.now += 600  # access token expired
+
+    real_login = backend.session.routes[("POST", const.EP_LOGIN)]
+    backend.session.route(
+        "POST", const.EP_LOGIN,
+        lambda call: (503, error_envelope(500001, "Service under maintenance")),
+    )
+    with pytest.raises(SuzukiApiError):
+        await client.async_get_vehicles()
+    assert client.auth.refresh_token == refresh_token
+    assert backend.logins == [const.OVERRIDE_FORCE]  # only the initial login
+
+    backend.session.route("POST", const.EP_LOGIN, real_login)
+    await client.async_get_vehicles()
+    assert backend.logins == [const.OVERRIDE_FORCE]  # recovered via refresh
+
+
+async def test_requests_have_a_timeout(backend, clock):
+    await _client(backend).async_get_vehicles()
+    for call in backend.session.calls:
+        assert isinstance(call["timeout"], aiohttp.ClientTimeout)
+        assert call["timeout"].total == const.REQUEST_TIMEOUT
+
+
 async def test_login_http_401_without_body_errors_is_auth_error(backend, clock):
     backend.session.route("POST", const.EP_LOGIN, lambda call: (401, {}))
     with pytest.raises(SuzukiAuthError):

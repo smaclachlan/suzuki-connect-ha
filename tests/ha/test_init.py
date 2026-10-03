@@ -259,6 +259,32 @@ async def test_remove_entry_deletes_token_store(hass, hass_storage, patch_sessio
     assert storage_key(entry.entry_id) not in hass_storage
 
 
+async def test_unload_flushes_pending_token_save(hass, hass_storage, patch_session):
+    # Setup logs in, which schedules a debounced save. Unloading before it
+    # fires must still persist the token, or a reload reads a stale one.
+    entry = _entry()
+    await _setup(hass, entry)
+    token = entry.runtime_data.client.auth.refresh_token
+    assert storage_key(entry.entry_id) not in hass_storage  # still pending
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass_storage[storage_key(entry.entry_id)]["data"] == {"refresh_token": token}
+
+
+async def test_remove_entry_with_pending_save_leaves_no_token(
+    hass, hass_storage, patch_session, freezer
+):
+    # A save still pending at removal must not recreate the deleted file.
+    entry = _entry()
+    await _setup(hass, entry)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    freezer.tick(TOKEN_SAVE_DELAY + 1)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert storage_key(entry.entry_id) not in hass_storage
+
+
 async def test_diagnostics_are_redacted(hass, patch_session):
     entry = _entry()
     await _setup(hass, entry)
