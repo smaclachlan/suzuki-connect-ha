@@ -62,6 +62,74 @@ def test_absent_fields_are_unknown_not_false():
     assert s.state_of_charge is None
 
 
+def _status(name):
+    return VehicleStatus.from_dashboard(_data(_load(name))["DASHBOARD_DATA"])
+
+
+def test_charging():
+    s = _status("dashboard_charging.json")
+    assert s.is_charging is True
+    assert s.charge_status_raw == 1
+    assert s.charger_connected is True
+    assert s.remaining_charge_minutes == 95  # arrives as a string
+    assert s.state_of_charge == 62
+    assert s.range == 121.0
+
+
+def test_plugged_in_not_charging():
+    s = _status("dashboard_plugged_in_not_charging.json")
+    assert s.charger_connected is True
+    assert s.is_charging is False
+    assert s.remaining_charge_minutes is None
+
+
+def test_disconnected_charger_field_absent_is_unknown():
+    # chargerConnected_st is only sent while plugged in; its absence must read
+    # as unknown, not as a confident "unplugged".
+    s = _status("dashboard.json")
+    assert "chargerConnected_st" not in s.raw
+    assert s.charger_connected is None
+    assert s.is_charging is False
+
+
+def test_null_values_are_unknown():
+    s = _status("dashboard_null_values.json")
+    assert s.state_of_charge is None
+    assert s.range is None
+    assert s.is_charging is None
+    assert s.charger_connected is None
+    assert s.doors_locked is None
+    assert s.doors_open is None
+    assert s.ac_on is None
+    assert s.ignition_on is None
+    assert s.odometer is None
+    assert s.remaining_charge_minutes is None
+    assert s.average_consumption is None
+    assert s.location is None          # [{latitude: null, longitude: null}]
+    assert s.last_updated is None
+    # Fields that were not nulled still parse.
+    assert s.range_unit == "mile"
+
+
+def test_dormant_vehicle():
+    # Asleep / not reporting: user_data is null, only a stale lut remains.
+    s = _status("dashboard_dormant.json")
+    assert s.state_of_charge is None
+    assert s.is_charging is None
+    assert s.location is None
+    assert s.raw == {}
+    assert s.last_updated is not None
+    assert (s.last_updated.year, s.last_updated.month, s.last_updated.day) == (2026, 9, 14)
+
+
+def test_missing_user_data_and_odd_shapes():
+    assert VehicleStatus.from_dashboard({"lut": "not a date"}).last_updated is None
+    s = VehicleStatus.from_dashboard({"user_data": {"latestGPS": [], "GPS": None}})
+    assert s.location is None
+    s = VehicleStatus.from_dashboard({"user_data": {"currentChargeLevel": "n/a"}})
+    assert s.state_of_charge is None
+
+
 if __name__ == "__main__":
     test_parse_vehicles()
     test_parse_dashboard_status()

@@ -47,7 +47,9 @@ Assistant signs in it takes over the session, which logs your phone's Suzuki
 app out (and opening the app again will log Home Assistant out until its next
 poll). Reads do not evict — only a fresh login does — and the integration
 refreshes its token rather than re-logging-in wherever possible, so in normal
-use they rarely fight. If you want to use the phone app freely, consider a
+use they rarely fight. If the app keeps taking the session back, Home Assistant
+reclaims it at most once every 5 minutes and otherwise just skips that poll, so
+the two never fight in a tight loop. If you want to use the phone app freely, consider a
 dedicated Suzuki account (an invited/secondary driver) just for Home Assistant.
 
 ## Options

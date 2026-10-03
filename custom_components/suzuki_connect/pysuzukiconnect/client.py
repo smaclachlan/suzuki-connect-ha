@@ -6,7 +6,7 @@ from typing import Any, Optional
 import aiohttp
 
 from . import const
-from .auth import SuzukiAuth
+from .auth import SuzukiAuth, first_error, request_json
 from .exceptions import SuzukiApiError, SuzukiNoVehicleError
 from .models import Vehicle, VehicleHealth, VehicleStatus
 
@@ -91,21 +91,25 @@ class SuzukiConnectClient:
             "Authorization": f"Bearer {token}",
             "User-Agent": const.USER_AGENT,
         }
-        async with self._session.request(
-            method, self._auth.base_url + path, headers=headers, json=json
-        ) as resp:
-            status = resp.status
-            payload = await resp.json(content_type=None)
+        status, payload = await request_json(
+            self._session, method, self._auth.base_url + path,
+            headers=headers, json=json,
+        )
 
         # If the session was evicted mid-poll, the token is stale: re-auth once.
         if status in (401, 403) and _retry:
-            self._auth.access_token = None
+            self._auth.invalidate(token)
             return await self._authed_request(method, path, json=json, _retry=False)
 
-        errors = payload.get("errors") if isinstance(payload, dict) else None
-        if errors:
-            err = errors[0] if isinstance(errors, list) and errors else {}
+        # Application errors in the body take precedence (they carry a code and
+        # a readable message, and Suzuki sometimes sends them with odd statuses).
+        err = first_error(payload)
+        if err is not None:
             raise SuzukiApiError(
                 err.get("message") or "API error", code=err.get("code"), status=status
             )
+        if not 200 <= status < 300:
+            raise SuzukiApiError(f"HTTP {status}", status=status)
+        if not isinstance(payload, dict):
+            raise SuzukiApiError("unexpected response body", status=status)
         return payload

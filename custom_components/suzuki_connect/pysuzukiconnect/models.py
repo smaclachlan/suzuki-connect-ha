@@ -80,7 +80,9 @@ class Vehicle:
     """Identity of a vehicle on the account (from the vehicle list)."""
 
     contract_id: int
-    vin: Optional[str] = None
+    # Identifying/location fields are kept out of repr() so a logged model
+    # can't leak them.
+    vin: Optional[str] = field(default=None, repr=False)
     generation: Optional[str] = None     # VIN_GEN, e.g. "G3" — a platform code, not a VIN
     brand: Optional[str] = None          # e.g. "e VITARA"
     fuel_type: Optional[str] = None      # e.g. "EV"
@@ -140,7 +142,7 @@ class VehicleStatus:
     seatbelt_on: Optional[bool] = None
     bonnet_open: Optional[bool] = None
     boot_open: Optional[bool] = None
-    location: Optional[tuple[float, float]] = None
+    location: Optional[tuple[float, float]] = field(default=None, repr=False)
     odometer: Optional[float] = None
     vehicle_speed: Optional[float] = None
     average_consumption: Optional[float] = None
