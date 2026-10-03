@@ -13,21 +13,24 @@ on:
 permissions:
   contents: read
 
-# Actions are pinned to commit SHAs; Dependabot keeps them current.
+# Actions are pinned to commit SHAs; Dependabot keeps them current. The HACS
+# and hassfest validators are the exception: they publish no maintained tags
+# (so Dependabot can't update a pin) and recommend tracking their default
+# branch, so CI checks against the current rules. The token is read-only.
 jobs:
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: home-assistant/actions/hassfest@06749dd8c0b54f350bc69c8752456cee498808a3 # master
+      - uses: home-assistant/actions/hassfest@master
 
   hacs:
     name: HACS
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main
+      - uses: hacs/action@main
         with:
           category: integration
 
