@@ -59,6 +59,7 @@ class Vehicle:
 
     contract_id: int
     vin: Optional[str] = None
+    generation: Optional[str] = None     # VIN_GEN, e.g. "G3" — a platform code, not a VIN
     brand: Optional[str] = None          # e.g. "e VITARA"
     fuel_type: Optional[str] = None      # e.g. "EV"
     model_code: Optional[str] = None
@@ -76,7 +77,8 @@ class Vehicle:
     def from_entry(cls, e: dict) -> "Vehicle":
         return cls(
             contract_id=_int(e.get("CONTRACT_ID")) or 0,
-            vin=e.get("VIN_GEN") or e.get("VIN"),
+            vin=e.get("VIN"),
+            generation=e.get("VIN_GEN"),
             brand=e.get("BrandCode"),
             fuel_type=e.get("FUEL_TYPE"),
             model_code=e.get("VEHICLE_MODEL_CODE"),

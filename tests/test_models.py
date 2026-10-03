@@ -24,6 +24,8 @@ def test_parse_vehicles():
     v = vehicles[0]
     assert v.contract_id == 999999
     assert v.brand == "e VITARA"
+    assert v.vin == "VF1TEST0000000000"
+    assert v.generation == "G3"       # VIN_GEN is a platform code, not the VIN
     assert v.is_ev
     assert v.odometer == 14062.9  # thousands separator parsed
     assert v.odometer_unit == "miles"

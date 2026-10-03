@@ -23,7 +23,8 @@ class SuzukiConnectEntity(CoordinatorEntity[SuzukiConnectCoordinator]):
             manufacturer="Suzuki",
             name=vehicle.brand or "Suzuki",
             model=vehicle.brand,
-            serial_number=vehicle.vin,
+            serial_number=vehicle.vin,  # None unless a real VIN is present
+            hw_version=vehicle.generation,
         )
 
     @property
