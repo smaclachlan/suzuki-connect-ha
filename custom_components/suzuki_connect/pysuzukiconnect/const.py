@@ -35,6 +35,9 @@ OVERRIDE_FORCE = "1"  # evicts the currently-logged-in device
 # again, so the two devices can't ping-pong. Matches the minimum poll interval,
 # so steady-state polling gets at most one forced login per cycle.
 FORCED_LOGIN_COOLDOWN = 300.0
+# Per-request timeout (seconds). Home Assistant's shared session has none, so
+# without this aiohttp's 5-minute default could stall a whole poll cycle.
+REQUEST_TIMEOUT = 30.0
 
 # Known application error codes
 ERR_ANOTHER_ACTIVE_LOGIN = 400008

@@ -38,6 +38,7 @@ async def request_json(
     errors in it, sometimes with odd statuses (e.g. 505 for "Another Active
     Login"). Transport failures become SuzukiConnectionError.
     """
+    kwargs.setdefault("timeout", aiohttp.ClientTimeout(total=const.REQUEST_TIMEOUT))
     try:
         async with session.request(method, url, **kwargs) as resp:
             status = resp.status
@@ -255,13 +256,19 @@ class SuzukiAuth:
 
     @staticmethod
     def _raise_for_error(status: int, payload: Any) -> None:
-        # Application errors in the body win over the HTTP status.
         err = first_error(payload)
         if err is not None:
             code = err.get("code")
             if code == const.ERR_ANOTHER_ACTIVE_LOGIN:
+                # Suzuki sends this one over HTTP 505, so check it before status.
                 raise SuzukiAnotherActiveLogin(err.get("title"))
-            raise SuzukiAuthError(err.get("message") or f"login failed (code {code})")
+            message = err.get("message") or f"login failed (code {code})"
+            if status >= 500:
+                # A server-side error body (e.g. maintenance) is not a credential
+                # problem: treating it as one would discard a working refresh
+                # token, force a login that evicts the phone, or start reauth.
+                raise SuzukiApiError(message, code=code, status=status)
+            raise SuzukiAuthError(message)
         if status in (401, 403):
             raise SuzukiAuthError(f"login rejected (HTTP {status})")
         if not 200 <= status < 300:

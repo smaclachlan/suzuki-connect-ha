@@ -67,6 +67,7 @@ class FakeSession:
             "data": kwargs.get("data"),
             "json": kwargs.get("json"),
             "headers": kwargs.get("headers") or {},
+            "timeout": kwargs.get("timeout"),
         }
         self.calls.append(call)
         fn = self.routes.get((method, path))

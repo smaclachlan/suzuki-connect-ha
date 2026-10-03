@@ -129,6 +129,17 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
             TOKEN_SAVE_DELAY,
         )
 
+    async def async_flush_token(self) -> None:
+        """Write the refresh token now and stop further saves.
+
+        Called on unload. A debounced save still pending would otherwise land
+        after a reload has read the old token (forcing a login that evicts the
+        phone), or after removal has deleted the file (leaving a live refresh
+        token on disk).
+        """
+        self.client.auth.on_tokens_updated = None
+        await self._store.async_save({"refresh_token": self.client.auth.refresh_token})
+
     async def _async_update_data(self) -> SuzukiData:
         self.last_attempt = dt_util.utcnow()
         started = time.monotonic()
