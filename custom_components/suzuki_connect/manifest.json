@@ -1,0 +1,12 @@
+{
+  "domain": "suzuki_connect",
+  "name": "Suzuki Connect",
+  "codeowners": [
+    "@smaclachlan"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/smaclachlan/suzuki-connect-ha",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/smaclachlan/suzuki-connect-ha/issues",
+  "version": "0.1.0"
+}

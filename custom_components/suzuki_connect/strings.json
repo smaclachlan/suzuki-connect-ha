@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Suzuki Connect",
+        "description": "Sign in with your Suzuki Connect account. Suzuki allows only one active session per account, so Home Assistant will take over the session (your phone may be logged out).",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "device_name": "Device name (shown in the Suzuki app)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "another_active_login": "Another device is logged in and the session could not be taken over. Try again in a few minutes.",
+      "cannot_connect": "Could not reach Suzuki Connect.",
+      "no_vehicle": "No vehicle found on this account.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This account is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Suzuki Connect options",
+        "data": {
+          "scan_interval_minutes": "Poll interval (minutes)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state_of_charge": { "name": "State of charge" },
+      "range": { "name": "Range" },
+      "remaining_charge_time": { "name": "Remaining charge time" },
+      "odometer": { "name": "Odometer" },
+      "last_updated": { "name": "Last updated" }
+    },
+    "binary_sensor": {
+      "charging": { "name": "Charging" },
+      "charger_connected": { "name": "Charger connected" },
+      "doors_locked": { "name": "Door lock" }
+    },
+    "device_tracker": {
+      "car": { "name": "Location" }
+    }
+  }
+}

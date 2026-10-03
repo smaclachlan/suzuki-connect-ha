@@ -1,0 +1,27 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "VEHICLE_DATA": {
+        "PRIMARY_VEHICLE_LIST": [],
+        "SECONDARY_VEHICLE_LIST": [
+          {
+            "CONTRACT_ID": 999999,
+            "VEHICLE_STATUS": "ACTIVE",
+            "DCM_STATUS": "ACTIVATED",
+            "BrandCode": "e VITARA",
+            "FUEL_TYPE": "EV",
+            "VIN_GEN": "TESTVIN0000000000",
+            "VEHICLE_MODEL_CODE": "YY831C1HP02_WB3",
+            "ODOMETER_READING": "14,062.9",
+            "ODOMETER_READING_UNIT": "miles",
+            "COUNTRY_ID": "GB"
+          }
+        ],
+        "selectedContractId": 999999
+      }
+    }
+  }
+}

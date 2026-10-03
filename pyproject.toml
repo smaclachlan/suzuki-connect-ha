@@ -1,0 +1,10 @@
+# Dev tooling only. This repo ships a Home Assistant custom integration with
+# its API library vendored under custom_components/suzuki_connect/pysuzukiconnect;
+# nothing here is published to PyPI.
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
