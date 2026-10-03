@@ -127,43 +127,47 @@ Settings → the integration → **Configure**:
 - **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
   fetched at most hourly (one extra API call per vehicle).
 
-## Example: stop an Ohme charge at your target
+## Example: send the state of charge to Ohme
 
-Suzuki's state of charge isn't available to Ohme's car integrations, so Ohme
-can't stop at a percentage by itself. This automation pauses the Ohme charger
-once the e Vitara reaches its **Charge target**, as long as the car's data is
-recent. It uses the [Ohme integration](https://www.home-assistant.io/integrations/ohme/).
+The [Ohme integration](https://www.home-assistant.io/integrations/ohme/) can
+take the car's state of charge from Home Assistant, so Ohme's smart charging
+plans from the real battery level. Its state-of-charge entity is **disabled by
+default**: enable it on the Ohme device first.
+
+This automation copies the e Vitara's state of charge to Ohme whenever it
+changes. It skips stale readings, so Ohme isn't sent an old value from a car
+that hasn't reported recently.
 
 ```yaml
-alias: "e Vitara: pause Ohme at charge target"
+alias: "e Vitara: send state of charge to Ohme"
 triggers:
   - trigger: state
     entity_id: sensor.e_vitara_state_of_charge
+  # Also when the car is plugged in, so Ohme has a value for planning.
+  - trigger: state
+    entity_id: binary_sensor.e_vitara_charger_connected
+    to: "on"
 conditions:
-  # Only act on reasonably fresh data from the car.
+  - condition: template
+    value_template: >
+      {{ states('sensor.e_vitara_state_of_charge') | is_number }}
+  # Only send reasonably fresh data from the car.
   - condition: template
     value_template: >
       {{ states('sensor.e_vitara_telemetry_age') | float(9999) < 30 }}
-  - condition: template
-    value_template: >
-      {{ states('sensor.e_vitara_state_of_charge') | float(0)
-         >= states('number.e_vitara_charge_target') | float(101) }}
-  - condition: state
-    entity_id: binary_sensor.e_vitara_charging
-    state: "on"
 actions:
-  - action: select.select_option
+  - action: number.set_value
     target:
-      entity_id: select.ohme_home_pro_charge_mode
+      entity_id: number.ohme_home_pro_state_of_charge
     data:
-      option: paused
-mode: single
+      value: "{{ states('sensor.e_vitara_state_of_charge') | int }}"
+mode: queued
 ```
 
-Adjust the entity IDs to match your setup: the Ohme ones depend on your
-charger model, so check the charge-mode select's entity ID and options under
-the Ohme device. With the default 15-minute poll, the charge can overshoot the
-target by up to one poll interval of charging.
+The entity IDs are examples; replace them with your own (the Ohme one depends
+on your charger model). With the default 15-minute poll,
+Ohme's value can lag the car by up to one poll interval plus the car's own
+reporting delay. This example hasn't yet been tested through a full charge.
 
 ## Known limitations
 
