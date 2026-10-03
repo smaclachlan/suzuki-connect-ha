@@ -42,6 +42,7 @@ def test_parse_dashboard_status():
     assert s.charge_status_raw == 0
     assert s.remaining_charge_minutes is None  # -1 normalized to None
     assert s.doors_locked is True              # doorlock_st == 0 means locked
+    assert s.doors_open is False                # opendoor_st == 0 means open (inverted)
     assert s.ignition_on is False
     assert s.ac_on is False
     assert s.location == (51.5, -0.12)

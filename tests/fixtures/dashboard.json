@@ -17,7 +17,7 @@
           "latestGPS": [{ "latitude": 51.5, "longitude": -0.12 }],
           "ignition_status": 0,
           "doorlock_st": 0,
-          "opendoor_st": 0,
+          "opendoor_st": 1,
           "driving_range": 88,
           "driving_range_unit": "mile",
           "mileage": 22632,

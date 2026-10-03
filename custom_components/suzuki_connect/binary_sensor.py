@@ -118,6 +118,61 @@ BINARY_SENSORS: tuple[SuzukiBinaryDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=lambda s: s.steering_heater_on,
     ),
+    # --- body states (verified on vehicle; opendoor_st is inverted) ---
+    # Doors enabled by default (security-relevant); the rest opt-in.
+    SuzukiBinaryDescription(
+        key="doors_open",
+        translation_key="doors_open",
+        device_class=BinarySensorDeviceClass.DOOR,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda s: s.doors_open,
+    ),
+    SuzukiBinaryDescription(
+        key="hazard",
+        translation_key="hazard",
+        device_class=BinarySensorDeviceClass.LIGHT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.hazard_on,
+    ),
+    SuzukiBinaryDescription(
+        key="headlights",
+        translation_key="headlights",
+        device_class=BinarySensorDeviceClass.LIGHT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.headlights_on,
+    ),
+    SuzukiBinaryDescription(
+        key="handbrake",
+        translation_key="handbrake",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.handbrake_on,
+    ),
+    SuzukiBinaryDescription(
+        key="seatbelt",
+        translation_key="seatbelt",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.seatbelt_on,
+    ),
+    SuzukiBinaryDescription(
+        key="bonnet",
+        translation_key="bonnet",
+        device_class=BinarySensorDeviceClass.OPENING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.bonnet_open,
+    ),
+    SuzukiBinaryDescription(
+        key="boot",
+        translation_key="boot",
+        device_class=BinarySensorDeviceClass.OPENING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.boot_open,
+    ),
 )
 
 

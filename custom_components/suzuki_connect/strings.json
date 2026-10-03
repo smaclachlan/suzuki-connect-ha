@@ -63,7 +63,14 @@
       "defogger": { "name": "Defogger" },
       "defroster": { "name": "Defroster" },
       "seat_heater": { "name": "Seat heater" },
-      "steering_heater": { "name": "Steering wheel heater" }
+      "steering_heater": { "name": "Steering wheel heater" },
+      "doors_open": { "name": "Doors" },
+      "hazard": { "name": "Hazard lights" },
+      "headlights": { "name": "Headlights" },
+      "handbrake": { "name": "Handbrake" },
+      "seatbelt": { "name": "Seatbelt" },
+      "bonnet": { "name": "Bonnet" },
+      "boot": { "name": "Boot" }
     },
     "device_tracker": {
       "car": { "name": "Location" }

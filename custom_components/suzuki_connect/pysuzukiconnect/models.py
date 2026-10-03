@@ -131,6 +131,15 @@ class VehicleStatus:
     steering_heater_on: Optional[bool] = None
     doors_locked: Optional[bool] = None
     ignition_on: Optional[bool] = None
+    # Body states. doors_open is inverted like the lock (0 = open); the rest use
+    # non-zero = active (confirmed on the vehicle).
+    doors_open: Optional[bool] = None
+    hazard_on: Optional[bool] = None
+    headlights_on: Optional[bool] = None
+    handbrake_on: Optional[bool] = None
+    seatbelt_on: Optional[bool] = None
+    bonnet_open: Optional[bool] = None
+    boot_open: Optional[bool] = None
     location: Optional[tuple[float, float]] = None
     odometer: Optional[float] = None
     vehicle_speed: Optional[float] = None
@@ -181,6 +190,17 @@ class VehicleStatus:
                 else _int(ud.get("doorlock_st")) == 0
             ),
             ignition_on=_bool_int(ud.get("ignition_status")),
+            # opendoor_st is inverted (0 = open), like doorlock_st:
+            doors_open=(
+                None if _int(ud.get("opendoor_st")) is None
+                else _int(ud.get("opendoor_st")) == 0
+            ),
+            hazard_on=_bool_int(ud.get("hzrd_st")),
+            headlights_on=_bool_int(ud.get("headlight_st")),
+            handbrake_on=_bool_int(ud.get("prbrk_st")),
+            seatbelt_on=_bool_int(ud.get("seatBelt_st")),
+            bonnet_open=_bool_int(ud.get("hoodStatus")),
+            boot_open=_bool_int(ud.get("trunkStatus")),
             location=_gps(ud.get("latestGPS") or ud.get("GPS")),
             odometer=_num(ud.get("mileage")),
             vehicle_speed=_num(ud.get("vehicleSpeed")),
