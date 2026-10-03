@@ -112,8 +112,12 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
     def __init__(self, coordinator, description: SuzukiSensorDescription) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
-        if description.unit_fn:
-            self._attr_native_unit_of_measurement = description.unit_fn(self._status)
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        if self.entity_description.unit_fn:
+            return self.entity_description.unit_fn(self._status)
+        return self.entity_description.native_unit_of_measurement
 
     @property
     def native_value(self) -> Any:
