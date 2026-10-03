@@ -9,6 +9,13 @@
           "password": "Password",
           "device_name": "Device name (shown in the Suzuki app)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Suzuki Connect",
+        "description": "Re-enter the password for {email}.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -19,7 +26,8 @@
       "unknown": "Unexpected error."
     },
     "abort": {
-      "already_configured": "This account is already set up."
+      "already_configured": "This account is already set up.",
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {

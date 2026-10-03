@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -66,8 +67,9 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         try:
             vehicle, status = await self.client.async_get_primary_ev_status()
         except SuzukiAuthError as err:
-            # Surface as auth failure so HA can trigger reauth if persistent.
-            raise UpdateFailed(f"Authentication failed: {err}") from err
+            # Credentials no longer work (the client already retries with a
+            # forced re-login) -> prompt the user to re-authenticate.
+            raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
         except SuzukiConnectError as err:
             raise UpdateFailed(f"Error fetching Suzuki data: {err}") from err
         return SuzukiData(vehicle=vehicle, status=status)

@@ -42,55 +42,52 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    async def _validate(self, data: dict[str, Any]) -> tuple[str | None, str | None]:
+        """Try to log in. Return (error_key, vehicle_title); error_key None on success."""
+        client = SuzukiConnectClient(
+            async_get_clientsession(self.hass),
+            data[CONF_EMAIL],
+            data[CONF_PASSWORD],
+            device_id=data[CONF_DEVICE_ID],
+            device_name=data.get(CONF_DEVICE_NAME, DEFAULT_DEVICE_NAME),
+        )
+        try:
+            vehicles = await client.async_get_vehicles()
+        except SuzukiAnotherActiveLogin as err:
+            _LOGGER.warning("Suzuki: another active login: %s", err)
+            return "another_active_login", None
+        except SuzukiAuthError as err:
+            _LOGGER.warning("Suzuki auth failed: %s", err)
+            return "invalid_auth", None
+        except SuzukiNoVehicleError:
+            return "no_vehicle", None
+        except SuzukiConnectError as err:
+            _LOGGER.warning("Suzuki connect error: %s", err)
+            return "cannot_connect", None
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Suzuki: unexpected error during setup")
+            return "unknown", None
+        return None, next((v.brand for v in vehicles if v.brand), "Suzuki")
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip()
-            device_name = user_input.get(CONF_DEVICE_NAME) or DEFAULT_DEVICE_NAME
-            # Stable, persisted device id so HA keeps one of the 5 device slots.
-            device_id = str(uuid.uuid4())
-
             await self.async_set_unique_id(email.lower())
             self._abort_if_unique_id_configured()
-
-            client = SuzukiConnectClient(
-                async_get_clientsession(self.hass),
-                email,
-                user_input[CONF_PASSWORD],
-                device_id=device_id,
-                device_name=device_name,
-            )
-            try:
-                vehicles = await client.async_get_vehicles()
-            except SuzukiAnotherActiveLogin as err:
-                _LOGGER.warning("Suzuki: another active login: %s", err)
-                errors["base"] = "another_active_login"
-            except SuzukiAuthError as err:
-                _LOGGER.warning("Suzuki auth failed: %s", err)
-                errors["base"] = "invalid_auth"
-            except SuzukiNoVehicleError:
-                errors["base"] = "no_vehicle"
-            except SuzukiConnectError as err:
-                _LOGGER.warning("Suzuki connect error: %s", err)
-                errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Suzuki: unexpected error during setup")
-                errors["base"] = "unknown"
-            else:
-                title = next(
-                    (v.brand for v in vehicles if v.brand), "Suzuki"
-                )
-                return self.async_create_entry(
-                    title=title,
-                    data={
-                        CONF_EMAIL: email,
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                        CONF_DEVICE_ID: device_id,
-                        CONF_DEVICE_NAME: device_name,
-                    },
-                )
+            data = {
+                CONF_EMAIL: email,
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+                # Stable, persisted device id so HA keeps one of the 5 device slots.
+                CONF_DEVICE_ID: str(uuid.uuid4()),
+                CONF_DEVICE_NAME: user_input.get(CONF_DEVICE_NAME) or DEFAULT_DEVICE_NAME,
+            }
+            error, title = await self._validate(data)
+            if error is None:
+                return self.async_create_entry(title=title, data=data)
+            errors["base"] = error
 
         schema = vol.Schema(
             {
@@ -101,6 +98,30 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="user", data_schema=schema, errors=errors
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Triggered when the stored credentials stop working."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
+            error, _ = await self._validate(data)
+            if error is None:
+                return self.async_update_reload_and_abort(entry, data=data)
+            errors["base"] = error
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            description_placeholders={"email": entry.data[CONF_EMAIL]},
+            errors=errors,
         )
 
     @staticmethod
