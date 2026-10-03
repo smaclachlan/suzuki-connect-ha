@@ -7,6 +7,9 @@ DOMAIN = "suzuki_connect"
 
 CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_NAME = "device_name"
+# Selected vehicles (list of contract ids). CONF_CONTRACT_ID is the single id
+# stored by config entry minor version 1, migrated to the list in 1.2.
+CONF_CONTRACT_IDS = "contract_ids"
 CONF_CONTRACT_ID = "contract_id"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
 # Opt-in extra endpoints (each makes additional API calls)

@@ -15,6 +15,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .pysuzukiconnect import (
@@ -27,7 +28,7 @@ from .pysuzukiconnect import (
 )
 
 from .const import (
-    CONF_CONTRACT_ID,
+    CONF_CONTRACT_IDS,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
     CONF_ENABLE_HEALTH,
@@ -54,6 +55,7 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup."""
 
     VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
@@ -108,7 +110,7 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._data = data
                 self._vehicles = vehicles
                 if len(vehicles) == 1:
-                    return self._create_entry(vehicles[0])
+                    return self._create_entry(vehicles)
                 return await self.async_step_vehicle()
             errors["base"] = error
 
@@ -126,24 +128,33 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_vehicle(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick which vehicle on the account to add."""
+        """Pick which of the account's vehicles to add (one or more)."""
         by_id = {str(v.contract_id): v for v in self._vehicles}
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self._create_entry(by_id[user_input[CONF_CONTRACT_ID]])
-        default = next((v for v in self._vehicles if v.is_ev), self._vehicles[0])
+            chosen = [by_id[cid] for cid in user_input[CONF_CONTRACT_IDS]]
+            if chosen:
+                return self._create_entry(chosen)
+            errors["base"] = "no_vehicle_selected"
+        default = [str(v.contract_id) for v in self._vehicles if v.is_ev] or [
+            str(self._vehicles[0].contract_id)
+        ]
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_CONTRACT_ID, default=str(default.contract_id)
-                ): vol.In({cid: _vehicle_label(v) for cid, v in by_id.items()}),
+                vol.Required(CONF_CONTRACT_IDS, default=default): cv.multi_select(
+                    {cid: _vehicle_label(v) for cid, v in by_id.items()}
+                ),
             }
         )
-        return self.async_show_form(step_id="vehicle", data_schema=schema)
+        return self.async_show_form(step_id="vehicle", data_schema=schema, errors=errors)
 
-    def _create_entry(self, vehicle: Vehicle) -> ConfigFlowResult:
+    def _create_entry(self, vehicles: list[Vehicle]) -> ConfigFlowResult:
+        title = (
+            vehicles[0].brand or "Suzuki" if len(vehicles) == 1 else "Suzuki Connect"
+        )
         return self.async_create_entry(
-            title=vehicle.brand or "Suzuki",
-            data={**self._data, CONF_CONTRACT_ID: vehicle.contract_id},
+            title=title,
+            data={**self._data, CONF_CONTRACT_IDS: [v.contract_id for v in vehicles]},
         )
 
     async def async_step_reauth(

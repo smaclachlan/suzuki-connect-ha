@@ -15,7 +15,7 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from . import SuzukiConfigEntry
-from .const import CONF_CONTRACT_ID, CONF_DEVICE_ID
+from .const import CONF_CONTRACT_ID, CONF_CONTRACT_IDS, CONF_DEVICE_ID
 
 REDACTED = "**REDACTED**"
 
@@ -29,7 +29,7 @@ REDACT_WORDS = frozenset({
 
 # Exact-match keys (our config entry, and ids that only redact as a pair).
 REDACT_KEYS = frozenset({
-    CONF_EMAIL, CONF_PASSWORD, CONF_DEVICE_ID, CONF_CONTRACT_ID,
+    CONF_EMAIL, CONF_PASSWORD, CONF_DEVICE_ID, CONF_CONTRACT_ID, CONF_CONTRACT_IDS,
     "deviceId", "unique_id",
 })
 
@@ -66,7 +66,6 @@ async def async_get_config_entry_diagnostics(
     coordinator = entry.runtime_data
     auth = coordinator.client.auth
     data = coordinator.data
-    age = coordinator.telemetry_age
 
     return {
         "entry": {
@@ -99,13 +98,29 @@ async def async_get_config_entry_diagnostics(
             "last_login": _iso(auth.last_login_at),
             "last_refresh": _iso(auth.last_refresh_at),
         },
+        # Listed in order, not keyed by contract id (which is redacted).
+        "vehicles": [
+            _vehicle_diagnostics(coordinator, cid, vdata)
+            for cid, vdata in (data.vehicles.items() if data else ())
+        ],
+    }
+
+
+def _vehicle_diagnostics(coordinator, contract_id: int, vdata) -> dict[str, Any]:
+    age = coordinator.telemetry_age(contract_id)
+    settings = coordinator.settings_for(contract_id)
+    return {
         "telemetry": {
             "last_reported_by_car": _iso(
-                coordinator.vehicle_time(data.status.last_updated) if data else None
+                coordinator.vehicle_time(vdata.status.last_updated)
             ),
             "age_s": round(age.total_seconds()) if age is not None else None,
         },
-        "vehicle": redact(data.vehicle.raw) if data else None,
-        "status": redact(data.status.raw) if data else None,
-        "health": redact(data.health.raw) if data and data.health else None,
+        "settings": {
+            "battery_capacity_kwh": settings.battery_capacity,
+            "charge_target_pct": settings.charge_target,
+        },
+        "vehicle": redact(vdata.vehicle.raw),
+        "status": redact(vdata.status.raw),
+        "health": redact(vdata.health.raw) if vdata.health else None,
     }

@@ -4,7 +4,7 @@ from __future__ import annotations
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.suzuki_connect.const import CONF_CONTRACT_ID, DOMAIN
+from custom_components.suzuki_connect.const import CONF_CONTRACT_IDS, DOMAIN
 from fake_session import PASSWORD, load_fixture
 
 EMAIL = "owner@example.com"
@@ -33,8 +33,9 @@ async def test_single_vehicle_creates_entry(hass, patch_session):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "e VITARA"
-    assert result["data"][CONF_CONTRACT_ID] == 999999
+    assert result["data"][CONF_CONTRACT_IDS] == [999999]
     assert result["result"].unique_id == EMAIL
+    assert result["result"].minor_version == 2
 
 
 async def test_multiple_vehicles_asks_which(hass, patch_session):
@@ -48,20 +49,41 @@ async def test_multiple_vehicles_asks_which(hass, patch_session):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "vehicle"
-    # The EV is preselected; labels show only the VIN's last four characters.
+    # EVs are preselected; labels show only the VIN's last four characters.
     schema = result["data_schema"].schema
     key = next(iter(schema))
-    assert key.default() == "999999"
-    labels = schema[key].container
+    assert key.default() == ["999999"]
+    labels = schema[key].options
     assert labels["111111"] == "SWIFT (VIN …1111)"
     assert all("TSMTEST" not in label for label in labels.values())
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_CONTRACT_ID: "111111"}
+        result["flow_id"], {CONF_CONTRACT_IDS: ["111111"]}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "SWIFT"
-    assert result["data"][CONF_CONTRACT_ID] == 111111
+    assert result["data"][CONF_CONTRACT_IDS] == [111111]
+
+
+async def test_multiple_vehicles_select_all(hass, patch_session):
+    backend = patch_session
+    payload = _two_vehicles()
+    backend.session.route(
+        "GET", "/api/profile/vehicleDetailsAuth",
+        lambda call: (200, payload) if backend.authorised(call) else (401, {}),
+    )
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_CONTRACT_IDS: []}
+    )
+    assert result["errors"] == {"base": "no_vehicle_selected"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_CONTRACT_IDS: ["999999", "111111"]}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Suzuki Connect"
+    assert sorted(result["data"][CONF_CONTRACT_IDS]) == [111111, 999999]
 
 
 async def test_invalid_auth(hass, patch_session):

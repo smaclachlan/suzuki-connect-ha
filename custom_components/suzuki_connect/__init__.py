@@ -1,19 +1,23 @@
 """The Suzuki Connect integration."""
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN
-from .const import STORAGE_VERSION
+from .const import CONF_CONTRACT_ID, CONF_CONTRACT_IDS, STORAGE_VERSION
 from .coordinator import SuzukiConnectCoordinator, storage_key
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.DEVICE_TRACKER,
+    Platform.NUMBER,
 ]
 
 type SuzukiConfigEntry = ConfigEntry[SuzukiConnectCoordinator]
@@ -32,6 +36,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> bo
 async def async_unload_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> bool:
+    """1.1 stored one selected contract id; 1.2 stores a list."""
+    if entry.version > 1:
+        return False  # downgraded from a future version
+    if entry.version == 1 and entry.minor_version < 2:
+        data = dict(entry.data)
+        contract_id = data.pop(CONF_CONTRACT_ID, None)
+        if contract_id is not None:
+            data[CONF_CONTRACT_IDS] = [contract_id]
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=2)
+        _LOGGER.debug("Migrated Suzuki Connect entry to 1.2")
+    return True
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> None:

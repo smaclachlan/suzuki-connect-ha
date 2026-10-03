@@ -2,13 +2,12 @@
 
 Reverse-engineered from the official Android app, **SuzukiConnect** EU
 (`suzuki.app.a025.SzkCnnctEur`), version `1.0.53` (versionCode 55), published by
-Magyar Suzuki Zrt. Source: static analysis of the APK (jadx). No live traffic
-has been captured yet.
+Magyar Suzuki Zrt. Source: static analysis of the APK (jadx), then confirmed
+against a live UK e Vitara for the read path (login, vehicle list, dashboard).
 
-All findings below come from decompiled Retrofit interfaces and Gson data
-models, so endpoint paths and JSON field names are high-confidence. Exact base
-URL and request/response *shapes* (nesting) still need one confirming capture or
-a careful read of the model classes.
+Endpoint paths and JSON field names come from decompiled Retrofit interfaces and
+Gson models. Sections marked *(confirmed)* were checked against live responses;
+everything else, including all remote commands, is unverified.
 
 ## Transport
 
@@ -33,8 +32,8 @@ Form-urlencoded (`@FieldMap`). Fields the app sends:
 | `password` | account password |
 | `grant_type` | `password` |
 | `override` | `0` = normal (returns `400008` if another device is logged in); **`1` = force login, evicting the other device** |
-| `client_id` | `ADFEF11CFE9F4E17A224CCF3AD652` (EU PROD) |
-| `client_secret` | `Mofra6j4HkQNf1sZEgCg5eKGPHjRiZJ1` (EU PROD) |
+| `client_id` | app-level identifier, same for every install (see `pysuzukiconnect/const.py`) |
+| `client_secret` | app-level identifier, same for every install (see `pysuzukiconnect/const.py`) |
 | `biometric_uuid` | empty unless biometric login is set up |
 | `device_id` | random UUID, generated once and persisted |
 | `device_type` | `Android` |
@@ -117,7 +116,7 @@ Login additionally has top-level `access_token`, `refresh_token`, `expiresIn`.
 - `access_token` — the JWT (top level)
 - `refresh_token` — (top level)
 - `expiresIn` — observed `240`. **Units unconfirmed** (240 s = 4 min, or 240 min).
-- `result.data.USER_DETAILS.DEFAULT_CONTRACT_ID` — e.g. `100000`
+- `result.data.USER_DETAILS.DEFAULT_CONTRACT_ID` — the account's default vehicle
 - `result.data.VEHICLE_DATA.{PRIMARY_VEHICLE_LIST,SECONDARY_VEHICLE_LIST}` — each
   vehicle has `CONTRACT_ID`, `FUEL_TYPE` (`EV`), `BrandCode` (`e VITARA`),
   `VIN_GEN`, `DCM_STATUS`, `ODOMETER_READING`(+`_UNIT`).
@@ -176,17 +175,19 @@ Reads returned cached telematics with `realTimeOpsPending: N` — polling does
 
 ## `client_id` / `client_secret`
 
-Unlike the base URL, these are **not** stored as plaintext: `libnative-lib.so`
-contains a `SuzukiCipherKey` and the getters decrypt a stored blob at runtime.
-So the two values must be obtained by either (a) one login capture from the
-phone — there is no certificate pinning, so a plain mitmproxy capture shows the
-exact form body including both values — or (b) replicating the cipher. The
-test-client reads them from a `.env` file so the user supplies them once.
+These identify the *app*, not a user: every install of the EU app sends the same
+pair, as with the Toyota/Kia/Hyundai integrations. They are not secrets in the
+OAuth sense and grant nothing without a user's own email and password. They live
+in `pysuzukiconnect/const.py` only and are deliberately not repeated in
+documentation.
+
+In the APK they're not plaintext: `libnative-lib.so` contains a
+`SuzukiCipherKey` and the getters decrypt a stored blob at runtime. They were
+obtained from one login capture (the app has no certificate pinning).
 
 ## Open questions (resolve during test-client / capture stage)
 
-1. ~~`client_id`, `client_secret`~~ — DONE: `ADFEF11CFE9F4E17A224CCF3AD652` /
-   `Mofra6j4HkQNf1sZEgCg5eKGPHjRiZJ1` (EU PROD; confirmed by live login).
+1. ~~`client_id`, `client_secret`~~ — DONE (confirmed by live login).
 0. ~~Session force mechanism~~ — DONE: `override=1` forces login (confirmed 200).
    **Still open:** does a `refresh_token` keep working after the phone evicts the
    session? Decides whether refresh-only polling can coexist with the phone.

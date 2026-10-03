@@ -12,9 +12,9 @@
       },
       "vehicle": {
         "title": "Choose vehicle",
-        "description": "This Suzuki account has more than one vehicle. Choose the one to add.",
+        "description": "This Suzuki account has more than one vehicle. Choose which to add; each becomes its own device. They share one Suzuki session.",
         "data": {
-          "contract_id": "Vehicle"
+          "contract_ids": "Vehicles"
         }
       },
       "reauth_confirm": {
@@ -30,6 +30,7 @@
       "another_active_login": "Another device is logged in and the session could not be taken over. Try again in a few minutes.",
       "cannot_connect": "Could not reach Suzuki Connect.",
       "no_vehicle": "No vehicle found on this account.",
+      "no_vehicle_selected": "Select at least one vehicle.",
       "unknown": "Unexpected error."
     },
     "abort": {
@@ -57,6 +58,8 @@
       "last_reported_by_car": { "name": "Last reported by car" },
       "last_polled": { "name": "Last polled" },
       "telemetry_age": { "name": "Telemetry age" },
+      "energy_remaining": { "name": "Energy remaining" },
+      "energy_to_target": { "name": "Energy to charge target" },
       "average_consumption": { "name": "Average consumption" },
       "vehicle_speed": { "name": "Speed" },
       "vehicle_health": { "name": "Vehicle health" }
@@ -80,6 +83,10 @@
       "seatbelt": { "name": "Seatbelt" },
       "bonnet": { "name": "Bonnet" },
       "boot": { "name": "Boot" }
+    },
+    "number": {
+      "battery_capacity": { "name": "Battery capacity" },
+      "charge_target": { "name": "Charge target" }
     },
     "device_tracker": {
       "car": { "name": "Location" }
