@@ -51,7 +51,9 @@
     "binary_sensor": {
       "charging": { "name": "Charging" },
       "charger_connected": { "name": "Charger connected" },
-      "doors_locked": { "name": "Door lock" }
+      "doors_locked": { "name": "Door lock" },
+      "ignition": { "name": "Ignition" },
+      "climate_active": { "name": "Climate active" }
     },
     "device_tracker": {
       "car": { "name": "Location" }

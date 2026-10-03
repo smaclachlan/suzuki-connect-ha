@@ -22,6 +22,19 @@ class SuzukiBinaryDescription(BinarySensorEntityDescription):
     value_fn: Callable[[Any], bool | None]
 
 
+def _climate_active(s) -> bool | None:
+    """Any heating/cooling running (A/C, defog/defrost, heaters, preconditioning)."""
+    flags = (
+        s.ac_on, s.defogger_on, s.defroster_on,
+        s.seat_heater_on, s.steering_heater_on, s.battery_preconditioning,
+    )
+    if any(f is True for f in flags):
+        return True
+    if all(f is None for f in flags):
+        return None
+    return False
+
+
 BINARY_SENSORS: tuple[SuzukiBinaryDescription, ...] = (
     SuzukiBinaryDescription(
         key="charging",
@@ -35,12 +48,25 @@ BINARY_SENSORS: tuple[SuzukiBinaryDescription, ...] = (
         device_class=BinarySensorDeviceClass.PLUG,
         value_fn=lambda s: s.charger_connected,
     ),
-    # doorlock_st: 1 = locked. BinarySensor LOCK is on when UNLOCKED.
+    # Model maps doorlock_st so doors_locked is True when locked;
+    # the LOCK binary sensor is "on" when UNLOCKED.
     SuzukiBinaryDescription(
         key="doors_locked",
         translation_key="doors_locked",
         device_class=BinarySensorDeviceClass.LOCK,
         value_fn=lambda s: (not s.doors_locked) if s.doors_locked is not None else None,
+    ),
+    SuzukiBinaryDescription(
+        key="ignition",
+        translation_key="ignition",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        value_fn=lambda s: s.ignition_on,
+    ),
+    SuzukiBinaryDescription(
+        key="climate_active",
+        translation_key="climate_active",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        value_fn=_climate_active,
     ),
 )
 
