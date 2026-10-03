@@ -8,7 +8,7 @@ accessor tolerates missing keys.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any, Optional
 
 
@@ -47,20 +47,39 @@ def _bool_int(value: Any) -> Optional[bool]:
     return None if i is None else i != 0
 
 
-def _find(obj: Any, *names: str) -> Any:
-    """Depth-first search for the first non-empty value under any of ``names``."""
-    want = {n.lower() for n in names}
-    stack = [obj]
-    while stack:
-        cur = stack.pop()
-        if isinstance(cur, dict):
-            for k, v in cur.items():
-                if isinstance(k, str) and k.lower() in want and v not in (None, "", []):
-                    return v
-            stack.extend(cur.values())
-        elif isinstance(cur, list):
-            stack.extend(cur)
-    return None
+def parse_timestamp(value: Any) -> Optional[datetime]:
+    """Parse a Suzuki timestamp.
+
+    ``lut`` arrives as a naive local time (``2026-10-02 18:54:37``); those are
+    returned naive and the caller attaches the right zone (see ``localize``).
+    ISO strings carrying an offset are returned timezone-aware as-is.
+    """
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def localize(value: Optional[datetime], tz: tzinfo) -> Optional[datetime]:
+    """Attach ``tz`` to a naive local timestamp; leave aware ones untouched.
+
+    Across a DST change: an ambiguous wall time (the repeated hour in autumn)
+    resolves to its first occurrence (fold=0), and a non-existent one (the
+    skipped hour in spring) is interpreted with the pre-transition offset, which
+    is what zoneinfo does for fold=0. Either way the result converts to a
+    single, well-defined UTC instant.
+    """
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=tz)
 
 
 def _gps(block: Any) -> Optional[tuple[float, float]]:
@@ -80,7 +99,9 @@ class Vehicle:
     """Identity of a vehicle on the account (from the vehicle list)."""
 
     contract_id: int
-    vin: Optional[str] = None
+    # Identifying/location fields are kept out of repr() so a logged model
+    # can't leak them.
+    vin: Optional[str] = field(default=None, repr=False)
     generation: Optional[str] = None     # VIN_GEN, e.g. "G3" — a platform code, not a VIN
     brand: Optional[str] = None          # e.g. "e VITARA"
     fuel_type: Optional[str] = None      # e.g. "EV"
@@ -140,7 +161,7 @@ class VehicleStatus:
     seatbelt_on: Optional[bool] = None
     bonnet_open: Optional[bool] = None
     boot_open: Optional[bool] = None
-    location: Optional[tuple[float, float]] = None
+    location: Optional[tuple[float, float]] = field(default=None, repr=False)
     odometer: Optional[float] = None
     vehicle_speed: Optional[float] = None
     average_consumption: Optional[float] = None
@@ -156,15 +177,7 @@ class VehicleStatus:
         if remaining is not None and remaining < 0:
             remaining = None  # -1 means "not applicable"
 
-        lut = dashboard_data.get("lut")
-        last_updated = None
-        if lut:
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
-                try:
-                    last_updated = datetime.strptime(str(lut), fmt)
-                    break
-                except ValueError:
-                    continue
+        last_updated = parse_timestamp(dashboard_data.get("lut"))
 
         charger_connected = _bool_yn(ud.get("chargerConnected_st")) \
             if "chargerConnected_st" in ud else None
@@ -215,9 +228,10 @@ class VehicleStatus:
 class VehicleHealth:
     """Vehicle health summary (from the vehicleHealthStatus endpoint).
 
-    Field names come from the decompiled HealthCheckResponse; the exact value
-    semantics (e.g. the healthStatus code/string) are not yet verified against a
-    live response, so this is exposed defensively.
+    Shape from the decompiled HealthCheckResponse:
+    ``result.data.VEHICLE_HEALTH_STATUS[0].{healthStatus, ResultCode,
+    drivableAdvice, lastUpdatedTime, failureItems}``. Value semantics (e.g. what
+    each healthStatus code means) are not yet verified against a live response.
     """
 
     status: Optional[str] = None
@@ -232,12 +246,18 @@ class VehicleHealth:
         result = payload.get("result") if isinstance(payload, dict) else None
         if isinstance(result, dict):
             data = result.get("data", {}) or {}
-        failures = _find(data, "failureItems")
-        status = _find(data, "healthStatus", "ResultCode")
+        items = data.get("VEHICLE_HEALTH_STATUS")
+        item = items[0] if isinstance(items, list) and items else {}
+        if not isinstance(item, dict):
+            item = {}
+        status = item.get("healthStatus")
+        if status in (None, ""):
+            status = item.get("ResultCode")
+        failures = item.get("failureItems")
         return cls(
-            status=str(status) if status is not None else None,
-            drivable_advice=_find(data, "drivableAdvice"),
+            status=str(status) if status not in (None, "") else None,
+            drivable_advice=item.get("drivableAdvice") or None,
             failure_count=len(failures) if isinstance(failures, list) else None,
-            last_updated=_find(data, "lastUpdatedTime"),
+            last_updated=item.get("lastUpdatedTime") or None,
             raw=data,
         )

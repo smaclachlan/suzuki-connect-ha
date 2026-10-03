@@ -11,36 +11,52 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfLength, UnitOfSpeed
+from homeassistant.const import (
+    EntityCategory,
+    PERCENTAGE,
+    UnitOfEnergy,
+    UnitOfLength,
+    UnitOfSpeed,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.util import dt as dt_util
 
 from . import SuzukiConfigEntry
 from .const import CONF_ENABLE_HEALTH
 from .entity import SuzukiConnectEntity
 
 
-def _as_local(value):
-    """Make the API's naive 'last reported' time timezone-aware.
-
-    The API reports it in the vehicle's local time (which matches the owner's
-    Home Assistant timezone), so a TIMESTAMP sensor needs it tz-aware or HA
-    rejects it as unavailable.
-    """
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
-    return value
-
-
 @dataclass(frozen=True, kw_only=True)
 class SuzukiSensorDescription(SensorEntityDescription):
     """Sensor description with a value getter against VehicleStatus."""
 
-    value_fn: Callable[[Any], Any]
+    # Called with (status, entity); most only need the status.
+    value_fn: Callable[[Any, Any], Any]
     unit_fn: Callable[[Any], str | None] | None = None
+
+
+def _minutes(delta) -> float | None:
+    return round(delta.total_seconds() / 60, 1) if delta is not None else None
+
+
+def _energy(status, entity, *, to_target: bool) -> float | None:
+    """kWh from SoC and the user-entered usable capacity (and charge target).
+
+    Unknown until the Battery capacity number has been set: Suzuki doesn't
+    report capacity, and e Vitara variants differ.
+    """
+    settings = entity.coordinator.settings_for(entity.contract_id)
+    soc = status.state_of_charge
+    if settings.battery_capacity is None or soc is None:
+        return None
+    if to_target:
+        if settings.charge_target is None:
+            return None
+        percent = max(0.0, settings.charge_target - soc)
+    else:
+        percent = soc
+    return round(settings.battery_capacity * percent / 100, 1)
 
 
 def _range_unit(status) -> str | None:
@@ -59,14 +75,14 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
-        value_fn=lambda s: s.state_of_charge,
+        value_fn=lambda s, e: s.state_of_charge,
     ),
     SuzukiSensorDescription(
         key="range",
         translation_key="range",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda s: s.range,
+        value_fn=lambda s, e: s.range,
         unit_fn=_range_unit,
     ),
     SuzukiSensorDescription(
@@ -74,7 +90,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         translation_key="remaining_charge_time",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement="min",
-        value_fn=lambda s: s.remaining_charge_minutes,
+        value_fn=lambda s, e: s.remaining_charge_minutes,
     ),
     SuzukiSensorDescription(
         key="odometer",
@@ -82,7 +98,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfLength.KILOMETERS,
-        value_fn=lambda s: s.odometer,
+        value_fn=lambda s, e: s.odometer,
     ),
     # Freshness of the telematics data itself (car -> cloud, ~every minute when
     # the car is awake). Distinct from "Last polled" (HA -> cloud).
@@ -91,7 +107,38 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         translation_key="last_reported_by_car",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_registry_enabled_default=True,
-        value_fn=lambda s: _as_local(s.last_updated),
+        # A TIMESTAMP sensor must be tz-aware or HA marks it unavailable.
+        value_fn=lambda s, e: e.coordinator.vehicle_time(s.last_updated),
+    ),
+    # How stale the car's data was when HA last polled. Large values mean the
+    # car is asleep/out of coverage even though polling is succeeding.
+    SuzukiSensorDescription(
+        key="telemetry_age",
+        translation_key="telemetry_age",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda s, e: _minutes(e.coordinator.telemetry_age(e.contract_id)),
+    ),
+    # Derived from SoC and the per-vehicle Battery capacity / Charge target
+    # numbers; unknown until capacity is set.
+    SuzukiSensorDescription(
+        key="energy_remaining",
+        translation_key="energy_remaining",
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda s, e: _energy(s, e, to_target=False),
+    ),
+    SuzukiSensorDescription(
+        key="energy_to_target",
+        translation_key="energy_to_target",
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda s, e: _energy(s, e, to_target=True),
     ),
     # --- opt-in diagnostics (disabled by default) ---
     SuzukiSensorDescription(
@@ -100,7 +147,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda s: s.average_consumption,
+        value_fn=lambda s, e: s.average_consumption,
         unit_fn=lambda s: s.average_consumption_unit,
     ),
     SuzukiSensorDescription(
@@ -111,7 +158,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda s: s.vehicle_speed,
+        value_fn=lambda s, e: s.vehicle_speed,
     ),
 )
 
@@ -122,12 +169,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    entities: list[SensorEntity] = [
-        SuzukiConnectSensor(coordinator, description) for description in SENSORS
-    ]
-    entities.append(SuzukiLastPolledSensor(coordinator))
-    if entry.options.get(CONF_ENABLE_HEALTH):
-        entities.append(SuzukiHealthSensor(coordinator))
+    entities: list[SensorEntity] = []
+    for cid in coordinator.data.vehicles:
+        entities.extend(SuzukiConnectSensor(coordinator, cid, d) for d in SENSORS)
+        entities.append(SuzukiLastPolledSensor(coordinator, cid))
+        if entry.options.get(CONF_ENABLE_HEALTH):
+            entities.append(SuzukiHealthSensor(coordinator, cid))
     async_add_entities(entities)
 
 
@@ -136,9 +183,15 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
 
     entity_description: SuzukiSensorDescription
 
-    def __init__(self, coordinator, description: SuzukiSensorDescription) -> None:
-        super().__init__(coordinator, description.key)
+    def __init__(
+        self, coordinator, contract_id: int, description: SuzukiSensorDescription
+    ) -> None:
+        super().__init__(coordinator, contract_id, description.key)
         self.entity_description = description
+
+    @property
+    def contract_id(self) -> int:
+        return self._contract_id
 
     @property
     def native_unit_of_measurement(self) -> str | None:
@@ -148,7 +201,7 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        return self.entity_description.value_fn(self._status)
+        return self.entity_description.value_fn(self._status, self)
 
 
 class SuzukiLastPolledSensor(SuzukiConnectEntity, SensorEntity):
@@ -158,8 +211,8 @@ class SuzukiLastPolledSensor(SuzukiConnectEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "last_polled")
+    def __init__(self, coordinator, contract_id: int) -> None:
+        super().__init__(coordinator, contract_id, "last_polled")
 
     @property
     def native_value(self) -> Any:
@@ -172,17 +225,17 @@ class SuzukiHealthSensor(SuzukiConnectEntity, SensorEntity):
     _attr_translation_key = "vehicle_health"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "vehicle_health")
+    def __init__(self, coordinator, contract_id: int) -> None:
+        super().__init__(coordinator, contract_id, "vehicle_health")
 
     @property
     def native_value(self) -> Any:
-        health = self.coordinator.data.health
+        health = self._vehicle_data.health if self._vehicle_data else None
         return health.status if health else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        health = self.coordinator.data.health
+        health = self._vehicle_data.health if self._vehicle_data else None
         if not health:
             return None
         return {

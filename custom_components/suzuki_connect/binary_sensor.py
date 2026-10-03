@@ -183,15 +183,19 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        SuzukiConnectBinarySensor(coordinator, d) for d in BINARY_SENSORS
+        SuzukiConnectBinarySensor(coordinator, cid, d)
+        for cid in coordinator.data.vehicles
+        for d in BINARY_SENSORS
     )
 
 
 class SuzukiConnectBinarySensor(SuzukiConnectEntity, BinarySensorEntity):
     entity_description: SuzukiBinaryDescription
 
-    def __init__(self, coordinator, description: SuzukiBinaryDescription) -> None:
-        super().__init__(coordinator, description.key)
+    def __init__(
+        self, coordinator, contract_id: int, description: SuzukiBinaryDescription
+    ) -> None:
+        super().__init__(coordinator, contract_id, description.key)
         self.entity_description = description
 
     @property

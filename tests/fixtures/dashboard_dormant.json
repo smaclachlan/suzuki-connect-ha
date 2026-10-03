@@ -1,0 +1,18 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "DASHBOARD_DATA": {
+        "REMOTE_PIN": 1,
+        "selectedContractId": 999999,
+        "FUEL_TYPE": "EV",
+        "VIN_GEN": "G3",
+        "DEVICE_TYPE": "G3",
+        "lut": "2026-09-14 07:02:11",
+        "user_data": null
+      }
+    }
+  }
+}

@@ -21,7 +21,9 @@ from .exceptions import (
     SuzukiApiError,
     SuzukiAuthError,
     SuzukiConnectError,
+    SuzukiConnectionError,
     SuzukiNoVehicleError,
+    SuzukiSessionTakenOver,
 )
 from .models import Vehicle, VehicleHealth, VehicleStatus
 
@@ -36,5 +38,7 @@ __all__ = [
     "SuzukiAuthError",
     "SuzukiAnotherActiveLogin",
     "SuzukiApiError",
+    "SuzukiConnectionError",
     "SuzukiNoVehicleError",
+    "SuzukiSessionTakenOver",
 ]

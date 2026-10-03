@@ -14,7 +14,10 @@ async def async_setup_entry(
     entry: SuzukiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    async_add_entities([SuzukiConnectDeviceTracker(entry.runtime_data)])
+    coordinator = entry.runtime_data
+    async_add_entities(
+        SuzukiConnectDeviceTracker(coordinator, cid) for cid in coordinator.data.vehicles
+    )
 
 
 class SuzukiConnectDeviceTracker(SuzukiConnectEntity, TrackerEntity):
@@ -22,8 +25,8 @@ class SuzukiConnectDeviceTracker(SuzukiConnectEntity, TrackerEntity):
 
     _attr_translation_key = "car"
 
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "location")
+    def __init__(self, coordinator, contract_id: int) -> None:
+        super().__init__(coordinator, contract_id, "location")
 
     @property
     def source_type(self) -> SourceType:

@@ -1,0 +1,46 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "DASHBOARD_DATA": {
+        "REMOTE_PIN": 1,
+        "selectedContractId": 999999,
+        "FUEL_TYPE": "EV",
+        "VIN_GEN": "G3",
+        "DEVICE_TYPE": "G3",
+        "lut": "2026-10-02 23:10:05",
+        "user_data": {
+          "fuel": 62.0,
+          "drv_km": 153,
+          "latestGPS": [
+            {
+              "latitude": 51.5,
+              "longitude": -0.12
+            }
+          ],
+          "ignition_status": 0,
+          "doorlock_st": 0,
+          "opendoor_st": 1,
+          "driving_range": 121,
+          "driving_range_unit": "mile",
+          "mileage": 22632,
+          "acOn_st": 0,
+          "defoggerOn_st": 0,
+          "defrosterOn_st": 0,
+          "seatHeaterOn_st": 0,
+          "steeringHeaterOn_st": 0,
+          "batteryPreconditioning_st": 0,
+          "averageConsumption": 0.2,
+          "averageConsumptionUnit": "miles/kWh",
+          "remainingChargingTime": "95",
+          "charge_st": 1,
+          "currentChargeLevel": 62,
+          "doorLockPending": "N",
+          "chargerConnected_st": "Y"
+        }
+      }
+    }
+  }
+}

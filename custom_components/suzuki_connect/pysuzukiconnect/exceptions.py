@@ -25,6 +25,26 @@ class SuzukiAnotherActiveLogin(SuzukiAuthError):
         )
 
 
+class SuzukiConnectionError(SuzukiConnectError):
+    """Could not reach the API (network error or timeout)."""
+
+
+class SuzukiSessionTakenOver(SuzukiConnectError):
+    """Another device holds the session and we reclaimed it too recently.
+
+    Deliberately not a SuzukiAuthError: the credentials are fine, so this must
+    not trigger a reauth flow. The next poll after ``retry_after`` seconds will
+    reclaim the session.
+    """
+
+    def __init__(self, retry_after: float):
+        self.retry_after = retry_after
+        super().__init__(
+            "Session was taken over by another device (e.g. the Suzuki app); "
+            f"not reclaiming it again for {retry_after:.0f}s."
+        )
+
+
 class SuzukiApiError(SuzukiConnectError):
     """The API returned an error payload for a non-auth call."""
 

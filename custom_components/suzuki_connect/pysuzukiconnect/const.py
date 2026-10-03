@@ -30,6 +30,11 @@ GRANT_PASSWORD = "password"
 GRANT_REFRESH = "refresh_token"
 OVERRIDE_OFF = "0"
 OVERRIDE_FORCE = "1"  # evicts the currently-logged-in device
+# Minimum seconds between forced (override) logins. If the phone app reclaims
+# the session again within this window we fail the poll instead of evicting it
+# again, so the two devices can't ping-pong. Matches the minimum poll interval,
+# so steady-state polling gets at most one forced login per cycle.
+FORCED_LOGIN_COOLDOWN = 300.0
 
 # Known application error codes
 ERR_ANOTHER_ACTIVE_LOGIN = 400008

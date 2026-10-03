@@ -6,6 +6,13 @@ charge, range, charging and lock status, odometer and location into Home
 Assistant so you can use them in dashboards and automations (for example,
 smart-charging alongside Ohme or Octopus).
 
+> [!IMPORTANT]
+> **Suzuki allows only one logged-in device per account.** When Home Assistant
+> signs in, your phone's Suzuki app is logged out, and vice versa. The
+> recommended setup is a **separate Suzuki account just for Home Assistant**:
+> invite it as a secondary driver from the main account in the Suzuki app, then
+> use that account here. See [One active session per account](#one-active-session-per-account).
+
 > **Unofficial / not affiliated.** This project is not affiliated with,
 > endorsed by, or supported by Suzuki. "Suzuki" and "Suzuki Connect" are
 > trademarks of their respective owners and are used here only to describe
@@ -15,14 +22,34 @@ smart-charging alongside Ohme or Octopus).
 
 ## Features
 
+Each vehicle gets its own device with:
+
 | Type | Entities |
 |---|---|
-| Sensors | State of charge (%), Range, Remaining charge time, Odometer, Last updated |
-| Binary sensors | Charging, Charger connected, Door lock |
-| Device tracker | Vehicle location |
+| Sensors | State of charge, Range, Remaining charge time, Odometer, Last reported by car, Energy remaining, Energy to charge target |
+| Binary sensors | Charging, Charger connected, Door lock, Doors, Ignition, Climate active |
+| Device tracker | Location |
+| Numbers (settings) | Battery capacity, Charge target |
+| Diagnostics | Last polled, Telemetry age, Vehicle health (opt-in) |
 
-Read-only today. Remote controls (lock/unlock, climate/preconditioning, charge
-start/stop) are planned.
+Disabled by default (enable in the entity settings): Average consumption,
+Speed, individual climate states (A/C, preconditioning, defogger, defroster,
+seat and steering heaters) and body states (hazards, headlights, handbrake,
+seatbelt, bonnet, boot).
+
+**Read-only.** Nothing this integration does changes anything on the car.
+
+### Energy sensors
+
+Suzuki doesn't report battery capacity, and e Vitara variants differ, so set
+**Battery capacity** (usable kWh) on the vehicle's device page. Then:
+
+- **Energy remaining** = state of charge × capacity.
+- **Energy to charge target** = (Charge target − state of charge) × capacity,
+  never below zero. **Charge target** defaults to 80 %.
+
+Both stay *unknown* until capacity is set. These values are stored in Home
+Assistant only; they are not sent to the car or to Suzuki.
 
 ## Requirements
 
@@ -35,25 +62,143 @@ start/stop) are planned.
    **Integration**.
 2. Install **Suzuki Connect**, then restart Home Assistant.
 3. **Settings → Devices & Services → Add Integration → Suzuki Connect**, and
-   sign in with your Suzuki Connect email and password.
+   sign in with your Suzuki Connect email and password. If the account has
+   more than one vehicle you choose which to add (EVs are preselected); each
+   becomes its own device.
 
 (Manual install: copy `custom_components/suzuki_connect/` into your HA
 `config/custom_components/` and restart.)
 
-## Important: one active session per account
+Each Suzuki account can be added once. All of its vehicles share one session
+and one poll. To change which vehicles are included, remove and re-add the
+integration.
 
-Suzuki allows only **one logged-in device per account** at a time. When Home
-Assistant signs in it takes over the session, which logs your phone's Suzuki
-app out (and opening the app again will log Home Assistant out until its next
-poll). Reads do not evict — only a fresh login does — and the integration
-refreshes its token rather than re-logging-in wherever possible, so in normal
-use they rarely fight. If you want to use the phone app freely, consider a
-dedicated Suzuki account (an invited/secondary driver) just for Home Assistant.
+## One active session per account
+
+Suzuki allows only **one logged-in device per account** at a time. Signing in
+on one device logs the other out:
+
+- When Home Assistant signs in, the phone app is logged out.
+- When you open the app and sign in, Home Assistant loses its session until it
+  next reclaims it.
+
+To keep this to a minimum, the integration:
+
+- **Refreshes its token rather than logging in** wherever possible. Reads and
+  refreshes don't log the phone out; only a fresh login does.
+- **Saves its refresh token**, so restarting Home Assistant doesn't force a new
+  login.
+- **Reclaims a lost session at most once every 5 minutes.** If the app keeps
+  taking the session back, Home Assistant skips polls instead of the two
+  logging each other out in a loop. Skipped polls show as unavailable data,
+  not as a request to re-enter your password.
+
+**Recommended:** use a dedicated account for Home Assistant. In the Suzuki
+app, invite a second email address as a secondary driver, accept the
+invitation, and use that account here. Your own account then stays logged in on
+your phone.
+
+## Polling vs. how fresh the car's data is
+
+There are two separate clocks, and they can be hours apart:
+
+- **Last polled** — when Home Assistant last fetched data from Suzuki's cloud
+  successfully. This follows the poll interval (default 15 minutes).
+- **Last reported by car** — when the car itself last sent data to the cloud.
+  The car reports while it's awake; when it's parked and asleep, or out of
+  mobile coverage, the cloud keeps serving the last values it has.
+
+**Telemetry age** (a diagnostic sensor) is the difference at the last poll.
+A recent *Last polled* with a large *Telemetry age* means polling is working
+but the car hasn't reported. The values are not current, even though they
+updated.
+
+Polling reads the cloud's cached data and does not appear to wake the car, so
+polling more often won't make the data fresher.
+
+For automations that act on state of charge, check freshness first, for
+example `{{ states('sensor.e_vitara_telemetry_age') | float(9999) < 60 }}`.
 
 ## Options
 
-- **Poll interval** (default 15 minutes) — Settings → the integration →
-  Configure. Reads return cached telematics and do not appear to wake the car.
+Settings → the integration → **Configure**:
+
+- **Poll interval** — default 15 minutes, allowed 5–240.
+- **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
+  fetched at most hourly (one extra API call per vehicle).
+
+## Example: send the state of charge to Ohme
+
+The [Ohme integration](https://www.home-assistant.io/integrations/ohme/) can
+take the car's state of charge from Home Assistant, so Ohme's smart charging
+plans from the real battery level. Its state-of-charge entity is **disabled by
+default**: enable it on the Ohme device first.
+
+This automation copies the e Vitara's state of charge to Ohme whenever it
+changes. It skips stale readings, so Ohme isn't sent an old value from a car
+that hasn't reported recently.
+
+```yaml
+alias: "e Vitara: send state of charge to Ohme"
+triggers:
+  - trigger: state
+    entity_id: sensor.e_vitara_state_of_charge
+  # Also when the car is plugged in, so Ohme has a value for planning.
+  - trigger: state
+    entity_id: binary_sensor.e_vitara_charger_connected
+    to: "on"
+conditions:
+  - condition: template
+    value_template: >
+      {{ states('sensor.e_vitara_state_of_charge') | is_number }}
+  # Only send reasonably fresh data from the car.
+  - condition: template
+    value_template: >
+      {{ states('sensor.e_vitara_telemetry_age') | float(9999) < 30 }}
+actions:
+  - action: number.set_value
+    target:
+      entity_id: number.ohme_home_pro_state_of_charge
+    data:
+      value: "{{ states('sensor.e_vitara_state_of_charge') | int }}"
+mode: queued
+```
+
+The entity IDs are examples; replace them with your own (the Ohme one depends
+on your charger model). With the default 15-minute poll,
+Ohme's value can lag the car by up to one poll interval plus the car's own
+reporting delay. This example hasn't yet been tested through a full charge.
+
+## Known limitations
+
+- **EU accounts only** (`*.eur.connect.suzuki`). Other regions use different
+  backends.
+- **One session per account.** See above.
+- **Read-only.** Remote lock, climate and charging controls are not
+  implemented.
+- **Data is only as fresh as the car's last report.** See
+  [Polling vs. how fresh the car's data is](#polling-vs-how-fresh-the-cars-data-is).
+- **Timestamps** from the car have no timezone. They are assumed to be in Home
+  Assistant's configured timezone.
+- **Unconfirmed values.** These have been seen only in some states, or not at
+  all on a live car, and may be wrong:
+  - `charge_st` while charging (the integration treats any non-zero value as
+    charging).
+  - `chargerConnected_st`: only sent while plugged in. When it's missing,
+    *Charger connected* shows unknown rather than off.
+  - The meaning of the vehicle-health status codes.
+- **Not exposed yet:** charge schedules and history, climate schedules, trips,
+  geofences, alert settings and subscription status. Endpoints for these are
+  listed in [docs/API.md](docs/API.md).
+- **Battery capacity** isn't reported by the API and must be entered by hand
+  for the energy sensors.
+
+## Troubleshooting
+
+Settings → the integration → ⋮ → **Download diagnostics** gives a report with
+poll timing and latency, the last error, token status and how old each car's
+data is. Email, password, tokens, VIN, contract IDs and location are redacted;
+check the file yourself before attaching it to an issue.
 
 ## Credits & license
 
