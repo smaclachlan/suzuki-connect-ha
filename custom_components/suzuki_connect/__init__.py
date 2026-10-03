@@ -4,9 +4,11 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
-from .coordinator import SuzukiConnectCoordinator
+from .const import STORAGE_VERSION
+from .coordinator import SuzukiConnectCoordinator, storage_key
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -30,6 +32,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> bo
 async def async_unload_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> None:
+    """Delete the persisted refresh token when the entry is removed."""
+    await Store(hass, STORAGE_VERSION, storage_key(entry.entry_id)).async_remove()
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: SuzukiConfigEntry) -> None:

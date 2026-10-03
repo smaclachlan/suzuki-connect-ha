@@ -10,6 +10,13 @@
           "device_name": "Device name (shown in the Suzuki app)"
         }
       },
+      "vehicle": {
+        "title": "Choose vehicle",
+        "description": "This Suzuki account has more than one vehicle. Choose the one to add.",
+        "data": {
+          "contract_id": "Vehicle"
+        }
+      },
       "reauth_confirm": {
         "title": "Suzuki Connect",
         "description": "Re-enter the password for {email}.",
@@ -49,6 +56,7 @@
       "odometer": { "name": "Odometer" },
       "last_reported_by_car": { "name": "Last reported by car" },
       "last_polled": { "name": "Last polled" },
+      "telemetry_age": { "name": "Telemetry age" },
       "average_consumption": { "name": "Average consumption" },
       "vehicle_speed": { "name": "Speed" },
       "vehicle_health": { "name": "Vehicle health" }

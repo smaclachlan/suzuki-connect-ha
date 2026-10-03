@@ -35,7 +35,8 @@ start/stop) are planned.
    **Integration**.
 2. Install **Suzuki Connect**, then restart Home Assistant.
 3. **Settings → Devices & Services → Add Integration → Suzuki Connect**, and
-   sign in with your Suzuki Connect email and password.
+   sign in with your Suzuki Connect email and password. If the account has
+   more than one vehicle you'll be asked which one to add.
 
 (Manual install: copy `custom_components/suzuki_connect/` into your HA
 `config/custom_components/` and restart.)
@@ -46,7 +47,8 @@ Suzuki allows only **one logged-in device per account** at a time. When Home
 Assistant signs in it takes over the session, which logs your phone's Suzuki
 app out (and opening the app again will log Home Assistant out until its next
 poll). Reads do not evict — only a fresh login does — and the integration
-refreshes its token rather than re-logging-in wherever possible, so in normal
+refreshes its token rather than re-logging-in wherever possible — including
+across Home Assistant restarts, since the refresh token is saved — so in normal
 use they rarely fight. If the app keeps taking the session back, Home Assistant
 reclaims it at most once every 5 minutes and otherwise just skips that poll, so
 the two never fight in a tight loop. If you want to use the phone app freely, consider a
@@ -54,8 +56,19 @@ dedicated Suzuki account (an invited/secondary driver) just for Home Assistant.
 
 ## Options
 
-- **Poll interval** (default 15 minutes) — Settings → the integration →
-  Configure. Reads return cached telematics and do not appear to wake the car.
+Settings → the integration → **Configure**:
+
+- **Poll interval** — default 15 minutes, allowed 5–240. Reads return cached
+  telematics and do not appear to wake the car.
+- **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
+  fetched at most hourly (one extra API call).
+
+## Troubleshooting
+
+Settings → the integration → ⋮ → **Download diagnostics** gives a report with
+poll timing and latency, the last error, token status and how old the car's
+data is. Email, password, tokens, VIN, contract ID and location are redacted;
+check the file yourself before attaching it to an issue.
 
 ## Credits & license
 

@@ -14,7 +14,8 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Callable, Optional
 
 import aiohttp
 
@@ -60,20 +61,19 @@ def first_error(payload: Any) -> Optional[dict]:
     return err if isinstance(err, dict) else {}
 
 
-def _find(obj: Any, *names: str) -> Any:
-    """Depth-first search for the first non-empty value under any of ``names``."""
-    want = {n.lower() for n in names}
-    stack = [obj]
-    while stack:
-        cur = stack.pop()
-        if isinstance(cur, dict):
-            for k, v in cur.items():
-                if isinstance(k, str) and k.lower() in want and v not in (None, "", []):
-                    return v
-            stack.extend(cur.values())
-        elif isinstance(cur, list):
-            stack.extend(cur)
-    return None
+def _login_field(payload: dict, name: str) -> Any:
+    """Read a login response field.
+
+    Tokens are top-level in the login response (docs/API.md); also accept the
+    standard ``result.data`` envelope, but never search deeper, so a same-named
+    key in some unrelated nested object can't be mistaken for a token.
+    """
+    value = payload.get(name)
+    if value in (None, ""):
+        result = payload.get("result")
+        data = result.get("data") if isinstance(result, dict) else None
+        value = data.get(name) if isinstance(data, dict) else None
+    return value if value not in (None, "") else None
 
 
 class SuzukiAuth:
@@ -106,6 +106,12 @@ class SuzukiAuth:
         # Serialises login/refresh so concurrent callers share one attempt.
         self._lock = asyncio.Lock()
         self._last_forced_login: Optional[float] = None
+        # Called after every successful login/refresh, e.g. to persist the
+        # refresh token so a restart can refresh instead of evicting the phone.
+        self.on_tokens_updated: Optional[Callable[[], None]] = None
+        # When the last login/refresh happened (UTC), for diagnostics only.
+        self.last_login_at: Optional[datetime] = None
+        self.last_refresh_at: Optional[datetime] = None
 
     # -- public ---------------------------------------------------------
     @property
@@ -132,6 +138,22 @@ class SuzukiAuth:
             self._last_forced_login = time.monotonic()
             return self.access_token  # type: ignore[return-value]
 
+    def restore_refresh_token(self, refresh_token: Optional[str]) -> None:
+        """Seed a refresh token saved from a previous run (no network call)."""
+        if refresh_token and not self.refresh_token:
+            self.refresh_token = refresh_token
+
+    @property
+    def token_valid(self) -> bool:
+        return self._token_valid()
+
+    @property
+    def token_expires_in(self) -> Optional[float]:
+        """Seconds until the current access token is considered expired."""
+        if not self.access_token:
+            return None
+        return max(0.0, self._expires_at - 30 - time.monotonic())
+
     def invalidate(self, token: str) -> None:
         """Drop ``token`` after the server rejected it.
 
@@ -157,6 +179,8 @@ class SuzukiAuth:
         }
         data = await self._post_form(const.EP_LOGIN, fields)
         self._store_tokens(data)
+        self.last_login_at = datetime.now(timezone.utc)
+        self._notify_tokens_updated()
 
     # -- internal -------------------------------------------------------
     def _token_valid(self) -> bool:
@@ -192,13 +216,19 @@ class SuzukiAuth:
         }
         data = await self._post_form(const.EP_LOGIN, fields)
         self._store_tokens(data)
+        self.last_refresh_at = datetime.now(timezone.utc)
+        self._notify_tokens_updated()
+
+    def _notify_tokens_updated(self) -> None:
+        if self.on_tokens_updated is not None:
+            self.on_tokens_updated()
 
     def _store_tokens(self, data: dict) -> None:
-        token = _find(data, "access_token")
+        token = _login_field(data, "access_token")
         if not token:
             raise SuzukiAuthError("login/refresh returned no access_token")
         self.access_token = token
-        refresh = _find(data, "refresh_token")
+        refresh = _login_field(data, "refresh_token")
         if refresh:
             self.refresh_token = refresh
         # expiresIn units are unconfirmed (observed 240); treat as seconds and
@@ -206,7 +236,9 @@ class SuzukiAuth:
         # hammer refreshes or hold a token far past its real lifetime. A 401 on
         # any call still triggers a reactive refresh regardless.
         try:
-            expires_in = float(_find(data, "expiresIn", "expires_in") or 240)
+            expires_in = float(
+                _login_field(data, "expiresIn") or _login_field(data, "expires_in") or 240
+            )
         except (TypeError, ValueError):
             expires_in = 240.0
         self._expires_at = time.monotonic() + max(60.0, min(expires_in, 3600.0))

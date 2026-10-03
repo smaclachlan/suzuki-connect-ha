@@ -1,13 +1,11 @@
 """Client/auth behaviour: HTTP error handling, token lifecycle, concurrency and
 recovery when the Suzuki app takes over the single active session."""
 import asyncio
-import json
-from pathlib import Path
 
 import aiohttp
 import pytest
 
-from fake_session import FakeSession, envelope, error_envelope
+from fake_session import PASSWORD, FakeBackend, envelope, error_envelope, make_backend
 
 from pysuzukiconnect import (
     SuzukiAnotherActiveLogin,
@@ -20,9 +18,7 @@ from pysuzukiconnect import (
 from pysuzukiconnect import auth as auth_mod
 from pysuzukiconnect import const
 
-FIXTURES = Path(__file__).parent / "fixtures"
 EMAIL = "owner@example.com"
-PASSWORD = "hunter2-secret"
 CONTRACT = 999999
 
 
@@ -47,73 +43,9 @@ def clock(monkeypatch):
     return c
 
 
-class FakeBackend:
-    """Simulates Suzuki's token endpoint and single-session semantics.
-
-    Each successful login/refresh mints a new token; ``evict()`` simulates the
-    phone app logging in with override, invalidating everything we hold.
-    """
-
-    def __init__(self, session: FakeSession) -> None:
-        self.session = session
-        self.counter = 0
-        self.valid_access: set[str] = set()
-        self.valid_refresh: set[str] = set()
-        self.logins: list[str] = []  # override flag per password login
-        self.refreshes = 0
-        self.refresh_survives_eviction = False
-        session.route("POST", const.EP_LOGIN, self._login)
-
-    def _mint(self) -> dict:
-        self.counter += 1
-        access, refresh = f"access-{self.counter}", f"refresh-{self.counter}"
-        self.valid_access.add(access)
-        self.valid_refresh.add(refresh)
-        return envelope(access_token=access, refresh_token=refresh, expiresIn=240)
-
-    def _login(self, call):
-        form = call["data"]
-        if form["grant_type"] == const.GRANT_REFRESH:
-            self.refreshes += 1
-            if form["refresh_token"] not in self.valid_refresh:
-                return 400, error_envelope(400001, "Invalid refresh token")
-            return 200, self._mint()
-        self.logins.append(form["override"])
-        if form["password"] != PASSWORD:
-            return 400, error_envelope(400002, "Invalid credentials")
-        self.valid_access.clear()
-        self.valid_refresh.clear()
-        return 200, self._mint()
-
-    def evict(self) -> None:
-        self.valid_access.clear()
-        if not self.refresh_survives_eviction:
-            self.valid_refresh.clear()
-
-    def authorised(self, call) -> bool:
-        auth = call["headers"].get("Authorization", "")
-        return auth.removeprefix("Bearer ") in self.valid_access
-
-
-def _fixture(name):
-    return json.loads((FIXTURES / name).read_text())
-
-
 @pytest.fixture
 def backend():
-    session = FakeSession()
-    be = FakeBackend(session)
-
-    def data_route(name):
-        def fn(call):
-            if not be.authorised(call):
-                return 401, {"message": "Unauthorized"}
-            return 200, _fixture(name)
-        return fn
-
-    session.route("GET", const.EP_VEHICLE_DETAILS, data_route("vehicles.json"))
-    session.route("POST", const.EP_DASHBOARD, data_route("dashboard.json"))
-    return be
+    return make_backend()
 
 
 def _client(be: FakeBackend, password: str = PASSWORD) -> SuzukiConnectClient:
@@ -317,6 +249,58 @@ async def test_failed_forced_login_does_not_start_cooldown(backend, clock):
         with pytest.raises(SuzukiApiError):
             await client.async_get_vehicles()
     assert len(calls) == 2
+
+
+# -- token persistence ---------------------------------------------------------
+
+async def test_restored_refresh_token_avoids_forced_login(backend, clock):
+    # Simulates an HA restart: the saved refresh token is still valid, so the
+    # new client refreshes instead of evicting the phone with a forced login.
+    first = _client(backend)
+    await first.async_get_vehicles()
+    saved = first.auth.refresh_token
+
+    second = _client(backend)
+    second.auth.restore_refresh_token(saved)
+    await second.async_get_vehicles()
+    assert backend.logins == ["1"] and backend.refreshes == 1
+
+
+async def test_stale_restored_refresh_token_falls_back_to_login(backend, clock):
+    client = _client(backend)
+    client.auth.restore_refresh_token("refresh-from-last-week")
+    await client.async_get_vehicles()
+    assert backend.refreshes == 1 and backend.logins == ["1"]
+
+
+async def test_tokens_updated_callback(backend, clock):
+    client = _client(backend)
+    seen = []
+    client.auth.on_tokens_updated = lambda: seen.append(client.auth.refresh_token)
+    await client.async_get_vehicles()
+    clock.now += 240
+    await client.async_get_vehicles()
+    assert seen == ["refresh-1", "refresh-2"]
+    assert client.auth.last_login_at is not None
+    assert client.auth.last_refresh_at is not None
+
+
+async def test_tokens_read_from_top_level_or_envelope_only(backend, clock):
+    # A token-like key nested somewhere unrelated must not be picked up.
+    backend.session.route(
+        "POST", const.EP_LOGIN,
+        lambda call: (200, envelope({"SOMETHING": {"access_token": "nope"}})),
+    )
+    with pytest.raises(SuzukiAuthError):
+        await _client(backend).auth.async_login()
+
+    backend.session.route(
+        "POST", const.EP_LOGIN,
+        lambda call: (200, envelope({"access_token": "in-envelope"})),
+    )
+    client = _client(backend)
+    await client.auth.async_login()
+    assert client.auth.access_token == "in-envelope"
 
 
 # -- redaction ------------------------------------------------------------------

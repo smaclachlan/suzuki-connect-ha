@@ -7,6 +7,7 @@ DOMAIN = "suzuki_connect"
 
 CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_NAME = "device_name"
+CONF_CONTRACT_ID = "contract_id"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
 # Opt-in extra endpoints (each makes additional API calls)
 CONF_ENABLE_HEALTH = "enable_health"
@@ -18,3 +19,7 @@ DEFAULT_SCAN_INTERVAL = timedelta(minutes=15)
 MIN_SCAN_INTERVAL_MINUTES = 5
 # Vehicle health changes rarely, so fetch it at most this often.
 HEALTH_REFRESH = timedelta(hours=1)
+MAX_SCAN_INTERVAL_MINUTES = 240
+
+# Per-entry storage (persisted refresh token).
+STORAGE_VERSION = 1

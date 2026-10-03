@@ -23,17 +23,29 @@ from .pysuzukiconnect import (
     SuzukiAuthError,
     SuzukiConnectError,
     SuzukiNoVehicleError,
+    Vehicle,
 )
 
 from .const import (
+    CONF_CONTRACT_ID,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
     CONF_ENABLE_HEALTH,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    MAX_SCAN_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
 )
+
+
+def _vehicle_label(vehicle: Vehicle) -> str:
+    """Human label for the vehicle picker; only the VIN's tail is shown."""
+    name = vehicle.brand or "Suzuki"
+    if vehicle.vin and len(vehicle.vin) >= 4:
+        return f"{name} (VIN …{vehicle.vin[-4:]})"
+    return f"{name} (contract {vehicle.contract_id})"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,8 +55,14 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def _validate(self, data: dict[str, Any]) -> tuple[str | None, str | None]:
-        """Try to log in. Return (error_key, vehicle_title); error_key None on success."""
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+        self._vehicles: list[Vehicle] = []
+
+    async def _validate(
+        self, data: dict[str, Any]
+    ) -> tuple[str | None, list[Vehicle]]:
+        """Try to log in. Return (error_key, vehicles); error_key None on success."""
         client = SuzukiConnectClient(
             async_get_clientsession(self.hass),
             data[CONF_EMAIL],
@@ -56,19 +74,19 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             vehicles = await client.async_get_vehicles()
         except SuzukiAnotherActiveLogin as err:
             _LOGGER.warning("Suzuki: another active login: %s", err)
-            return "another_active_login", None
+            return "another_active_login", []
         except SuzukiAuthError as err:
             _LOGGER.warning("Suzuki auth failed: %s", err)
-            return "invalid_auth", None
+            return "invalid_auth", []
         except SuzukiNoVehicleError:
-            return "no_vehicle", None
+            return "no_vehicle", []
         except SuzukiConnectError as err:
             _LOGGER.warning("Suzuki connect error: %s", err)
-            return "cannot_connect", None
+            return "cannot_connect", []
         except Exception:  # noqa: BLE001
             _LOGGER.exception("Suzuki: unexpected error during setup")
-            return "unknown", None
-        return None, next((v.brand for v in vehicles if v.brand), "Suzuki")
+            return "unknown", []
+        return None, vehicles
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -85,9 +103,13 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_DEVICE_ID: str(uuid.uuid4()),
                 CONF_DEVICE_NAME: user_input.get(CONF_DEVICE_NAME) or DEFAULT_DEVICE_NAME,
             }
-            error, title = await self._validate(data)
+            error, vehicles = await self._validate(data)
             if error is None:
-                return self.async_create_entry(title=title, data=data)
+                self._data = data
+                self._vehicles = vehicles
+                if len(vehicles) == 1:
+                    return self._create_entry(vehicles[0])
+                return await self.async_step_vehicle()
             errors["base"] = error
 
         schema = vol.Schema(
@@ -99,6 +121,29 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="user", data_schema=schema, errors=errors
+        )
+
+    async def async_step_vehicle(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick which vehicle on the account to add."""
+        by_id = {str(v.contract_id): v for v in self._vehicles}
+        if user_input is not None:
+            return self._create_entry(by_id[user_input[CONF_CONTRACT_ID]])
+        default = next((v for v in self._vehicles if v.is_ev), self._vehicles[0])
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_CONTRACT_ID, default=str(default.contract_id)
+                ): vol.In({cid: _vehicle_label(v) for cid, v in by_id.items()}),
+            }
+        )
+        return self.async_show_form(step_id="vehicle", data_schema=schema)
+
+    def _create_entry(self, vehicle: Vehicle) -> ConfigFlowResult:
+        return self.async_create_entry(
+            title=vehicle.brand or "Suzuki",
+            data={**self._data, CONF_CONTRACT_ID: vehicle.contract_id},
         )
 
     async def async_step_reauth(
@@ -145,8 +190,16 @@ class SuzukiConnectOptionsFlow(OptionsFlow):
             {
                 vol.Required(
                     CONF_SCAN_INTERVAL_MINUTES,
-                    default=options.get(CONF_SCAN_INTERVAL_MINUTES, 15),
-                ): vol.All(int, vol.Range(min=MIN_SCAN_INTERVAL_MINUTES, max=240)),
+                    default=options.get(
+                        CONF_SCAN_INTERVAL_MINUTES,
+                        int(DEFAULT_SCAN_INTERVAL.total_seconds() // 60),
+                    ),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(
+                        min=MIN_SCAN_INTERVAL_MINUTES, max=MAX_SCAN_INTERVAL_MINUTES
+                    ),
+                ),
                 vol.Required(
                     CONF_ENABLE_HEALTH,
                     default=options.get(CONF_ENABLE_HEALTH, False),

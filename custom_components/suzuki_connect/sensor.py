@@ -11,35 +11,27 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfLength, UnitOfSpeed
+from homeassistant.const import (
+    EntityCategory,
+    PERCENTAGE,
+    UnitOfLength,
+    UnitOfSpeed,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.util import dt as dt_util
 
 from . import SuzukiConfigEntry
 from .const import CONF_ENABLE_HEALTH
 from .entity import SuzukiConnectEntity
 
 
-def _as_local(value):
-    """Make the API's naive 'last reported' time timezone-aware.
-
-    The API reports it in the vehicle's local time (which matches the owner's
-    Home Assistant timezone), so a TIMESTAMP sensor needs it tz-aware or HA
-    rejects it as unavailable.
-    """
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
-    return value
-
-
 @dataclass(frozen=True, kw_only=True)
 class SuzukiSensorDescription(SensorEntityDescription):
     """Sensor description with a value getter against VehicleStatus."""
 
-    value_fn: Callable[[Any], Any]
+    # Called with (status, coordinator); most only need the status.
+    value_fn: Callable[[Any, Any], Any]
     unit_fn: Callable[[Any], str | None] | None = None
 
 
@@ -59,14 +51,14 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
-        value_fn=lambda s: s.state_of_charge,
+        value_fn=lambda s, c: s.state_of_charge,
     ),
     SuzukiSensorDescription(
         key="range",
         translation_key="range",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda s: s.range,
+        value_fn=lambda s, c: s.range,
         unit_fn=_range_unit,
     ),
     SuzukiSensorDescription(
@@ -74,7 +66,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         translation_key="remaining_charge_time",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement="min",
-        value_fn=lambda s: s.remaining_charge_minutes,
+        value_fn=lambda s, c: s.remaining_charge_minutes,
     ),
     SuzukiSensorDescription(
         key="odometer",
@@ -82,7 +74,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfLength.KILOMETERS,
-        value_fn=lambda s: s.odometer,
+        value_fn=lambda s, c: s.odometer,
     ),
     # Freshness of the telematics data itself (car -> cloud, ~every minute when
     # the car is awake). Distinct from "Last polled" (HA -> cloud).
@@ -91,7 +83,23 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         translation_key="last_reported_by_car",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_registry_enabled_default=True,
-        value_fn=lambda s: _as_local(s.last_updated),
+        # A TIMESTAMP sensor must be tz-aware or HA marks it unavailable.
+        value_fn=lambda s, c: c.vehicle_time(s.last_updated),
+    ),
+    # How stale the car's data was when HA last polled. Large values mean the
+    # car is asleep/out of coverage even though polling is succeeding.
+    SuzukiSensorDescription(
+        key="telemetry_age",
+        translation_key="telemetry_age",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda s, c: (
+            round(c.telemetry_age.total_seconds() / 60, 1)
+            if c.telemetry_age is not None else None
+        ),
     ),
     # --- opt-in diagnostics (disabled by default) ---
     SuzukiSensorDescription(
@@ -100,7 +108,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda s: s.average_consumption,
+        value_fn=lambda s, c: s.average_consumption,
         unit_fn=lambda s: s.average_consumption_unit,
     ),
     SuzukiSensorDescription(
@@ -111,7 +119,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda s: s.vehicle_speed,
+        value_fn=lambda s, c: s.vehicle_speed,
     ),
 )
 
@@ -148,7 +156,7 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        return self.entity_description.value_fn(self._status)
+        return self.entity_description.value_fn(self._status, self.coordinator)
 
 
 class SuzukiLastPolledSensor(SuzukiConnectEntity, SensorEntity):
