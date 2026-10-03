@@ -58,5 +58,5 @@ dedicated Suzuki account (an invited/secondary driver) just for Home Assistant.
 ## Credits & license
 
 Built by reverse-engineering the official Suzuki Connect EU app for
-interoperability with the owner's own vehicle data. MIT licensed — see
-[LICENSE](LICENSE). API notes in [docs/API.md](docs/API.md).
+interoperability with the owner's own vehicle data. Licensed under the Apache
+License 2.0 — see [LICENSE](LICENSE). API notes in [docs/API.md](docs/API.md).
