@@ -51,7 +51,18 @@ def test_parse_dashboard_status():
     assert s.last_updated.year == 2026 and s.last_updated.hour == 18
 
 
+def test_absent_fields_are_unknown_not_false():
+    # An empty payload must yield None (unknown), never a misleading False.
+    s = VehicleStatus.from_dashboard({})
+    assert s.is_charging is None
+    assert s.ac_on is None
+    assert s.doors_locked is None
+    assert s.ignition_on is None
+    assert s.state_of_charge is None
+
+
 if __name__ == "__main__":
     test_parse_vehicles()
     test_parse_dashboard_status()
+    test_absent_fields_are_unknown_not_false()
     print("all model tests passed")

@@ -41,6 +41,12 @@ def _bool_yn(value: Any) -> Optional[bool]:
     return None
 
 
+def _bool_int(value: Any) -> Optional[bool]:
+    """Boolean from a numeric 0/non-zero flag; None when the field is absent."""
+    i = _int(value)
+    return None if i is None else i != 0
+
+
 def _gps(block: Any) -> Optional[tuple[float, float]]:
     """GPS fields arrive as a 1-item list of {latitude, longitude}."""
     if isinstance(block, list) and block:
@@ -142,20 +148,22 @@ class VehicleStatus:
             range=_num(ud.get("driving_range")),
             range_unit=ud.get("driving_range_unit"),
             charge_status_raw=_int(ud.get("charge_st")),
-            is_charging=(_int(ud.get("charge_st")) or 0) != 0,
+            is_charging=_bool_int(ud.get("charge_st")),
             charger_connected=charger_connected,
             remaining_charge_minutes=remaining,
-            battery_preconditioning=_bool_yn(ud.get("batteryPreconditioning_st"))
-                if str(ud.get("batteryPreconditioning_st")) in ("Y", "N")
-                else (_int(ud.get("batteryPreconditioning_st")) or 0) != 0,
-            ac_on=(_int(ud.get("acOn_st")) or 0) != 0,
-            defogger_on=(_int(ud.get("defoggerOn_st")) or 0) != 0,
-            defroster_on=(_int(ud.get("defrosterOn_st")) or 0) != 0,
-            seat_heater_on=(_int(ud.get("seatHeaterOn_st")) or 0) != 0,
-            steering_heater_on=(_int(ud.get("steeringHeaterOn_st")) or 0) != 0,
-            # doorlock_st: 0 = locked, non-zero = unlocked (confirmed on vehicle)
-            doors_locked=(_int(ud.get("doorlock_st")) == 0),
-            ignition_on=(_int(ud.get("ignition_status")) or 0) != 0,
+            battery_preconditioning=_bool_int(ud.get("batteryPreconditioning_st")),
+            ac_on=_bool_int(ud.get("acOn_st")),
+            defogger_on=_bool_int(ud.get("defoggerOn_st")),
+            defroster_on=_bool_int(ud.get("defrosterOn_st")),
+            seat_heater_on=_bool_int(ud.get("seatHeaterOn_st")),
+            steering_heater_on=_bool_int(ud.get("steeringHeaterOn_st")),
+            # doorlock_st: 0 = locked, non-zero = unlocked (confirmed on vehicle);
+            # absent -> None (unknown)
+            doors_locked=(
+                None if _int(ud.get("doorlock_st")) is None
+                else _int(ud.get("doorlock_st")) == 0
+            ),
+            ignition_on=_bool_int(ud.get("ignition_status")),
             location=_gps(ud.get("latestGPS") or ud.get("GPS")),
             odometer=_num(ud.get("mileage")),
             average_consumption=_num(ud.get("averageConsumption")),
