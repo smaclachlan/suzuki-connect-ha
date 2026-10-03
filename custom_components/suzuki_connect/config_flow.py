@@ -28,6 +28,7 @@ from .pysuzukiconnect import (
 from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
+    CONF_ENABLE_HEALTH,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
     DOMAIN,
@@ -139,12 +140,17 @@ class SuzukiConnectOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = self.config_entry.options.get(CONF_SCAN_INTERVAL_MINUTES, 15)
+        options = self.config_entry.options
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_SCAN_INTERVAL_MINUTES, default=current
+                    CONF_SCAN_INTERVAL_MINUTES,
+                    default=options.get(CONF_SCAN_INTERVAL_MINUTES, 15),
                 ): vol.All(int, vol.Range(min=MIN_SCAN_INTERVAL_MINUTES, max=240)),
+                vol.Required(
+                    CONF_ENABLE_HEALTH,
+                    default=options.get(CONF_ENABLE_HEALTH, False),
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

@@ -8,7 +8,7 @@ import aiohttp
 from . import const
 from .auth import SuzukiAuth
 from .exceptions import SuzukiApiError, SuzukiNoVehicleError
-from .models import Vehicle, VehicleStatus
+from .models import Vehicle, VehicleHealth, VehicleStatus
 
 
 class SuzukiConnectClient:
@@ -60,6 +60,13 @@ class SuzukiConnectClient:
         data = await self._authed_request("POST", const.EP_DASHBOARD, json=body)
         dashboard = self._result_data(data).get("DASHBOARD_DATA", {}) or {}
         return VehicleStatus.from_dashboard(dashboard)
+
+    async def async_get_vehicle_health(self, contract_id: int) -> VehicleHealth:
+        """Fetch the vehicle health summary (separate, slower endpoint)."""
+        data = await self._authed_request(
+            "GET", const.EP_VEHICLE_HEALTH.format(contract_id=int(contract_id))
+        )
+        return VehicleHealth.from_response(data)
 
     async def async_get_primary_ev_status(self) -> tuple[Vehicle, VehicleStatus]:
         """Convenience: first EV (or first vehicle) plus its status."""

@@ -47,6 +47,22 @@ def _bool_int(value: Any) -> Optional[bool]:
     return None if i is None else i != 0
 
 
+def _find(obj: Any, *names: str) -> Any:
+    """Depth-first search for the first non-empty value under any of ``names``."""
+    want = {n.lower() for n in names}
+    stack = [obj]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            for k, v in cur.items():
+                if isinstance(k, str) and k.lower() in want and v not in (None, "", []):
+                    return v
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return None
+
+
 def _gps(block: Any) -> Optional[tuple[float, float]]:
     """GPS fields arrive as a 1-item list of {latitude, longitude}."""
     if isinstance(block, list) and block:
@@ -172,4 +188,36 @@ class VehicleStatus:
             average_consumption_unit=ud.get("averageConsumptionUnit"),
             last_updated=last_updated,
             raw=ud,
+        )
+
+
+@dataclass
+class VehicleHealth:
+    """Vehicle health summary (from the vehicleHealthStatus endpoint).
+
+    Field names come from the decompiled HealthCheckResponse; the exact value
+    semantics (e.g. the healthStatus code/string) are not yet verified against a
+    live response, so this is exposed defensively.
+    """
+
+    status: Optional[str] = None
+    drivable_advice: Optional[str] = None
+    failure_count: Optional[int] = None
+    last_updated: Optional[str] = None
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_response(cls, payload: dict) -> "VehicleHealth":
+        data: dict = {}
+        result = payload.get("result") if isinstance(payload, dict) else None
+        if isinstance(result, dict):
+            data = result.get("data", {}) or {}
+        failures = _find(data, "failureItems")
+        status = _find(data, "healthStatus", "ResultCode")
+        return cls(
+            status=str(status) if status is not None else None,
+            drivable_advice=_find(data, "drivableAdvice"),
+            failure_count=len(failures) if isinstance(failures, list) else None,
+            last_updated=_find(data, "lastUpdatedTime"),
+            raw=data,
         )

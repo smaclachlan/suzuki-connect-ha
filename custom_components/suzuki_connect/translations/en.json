@@ -35,7 +35,8 @@
       "init": {
         "title": "Suzuki Connect options",
         "data": {
-          "scan_interval_minutes": "Poll interval (minutes)"
+          "scan_interval_minutes": "Poll interval (minutes)",
+          "enable_health": "Fetch vehicle health (extra API call, hourly)"
         }
       }
     }
@@ -48,7 +49,8 @@
       "odometer": { "name": "Odometer" },
       "last_updated": { "name": "Last updated" },
       "average_consumption": { "name": "Average consumption" },
-      "vehicle_speed": { "name": "Speed" }
+      "vehicle_speed": { "name": "Speed" },
+      "vehicle_health": { "name": "Vehicle health" }
     },
     "binary_sensor": {
       "charging": { "name": "Charging" },

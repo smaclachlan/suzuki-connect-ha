@@ -23,7 +23,7 @@ from .exceptions import (
     SuzukiConnectError,
     SuzukiNoVehicleError,
 )
-from .models import Vehicle, VehicleStatus
+from .models import Vehicle, VehicleHealth, VehicleStatus
 
 __version__ = "0.1.0"
 
@@ -31,6 +31,7 @@ __all__ = [
     "SuzukiConnectClient",
     "Vehicle",
     "VehicleStatus",
+    "VehicleHealth",
     "SuzukiConnectError",
     "SuzukiAuthError",
     "SuzukiAnotherActiveLogin",

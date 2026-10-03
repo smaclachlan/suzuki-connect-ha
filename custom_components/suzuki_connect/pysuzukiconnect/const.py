@@ -22,6 +22,7 @@ DEFAULT_LANGUAGE = "EN"
 EP_LOGIN = "/api/sconnectapp/login/token"
 EP_VEHICLE_DETAILS = "/api/profile/vehicleDetailsAuth"
 EP_DASHBOARD = "/api/dashboard/dashboardOauth"
+EP_VEHICLE_HEALTH = "/api/dashboard/vehicleHealthStatus/{contract_id}"
 EP_LOGOUT = "/api/logout"
 
 # grant types / login

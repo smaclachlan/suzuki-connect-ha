@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import SuzukiConfigEntry
+from .const import CONF_ENABLE_HEALTH
 from .entity import SuzukiConnectEntity
 
 
@@ -119,9 +120,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[SensorEntity] = [
         SuzukiConnectSensor(coordinator, description) for description in SENSORS
-    )
+    ]
+    if entry.options.get(CONF_ENABLE_HEALTH):
+        entities.append(SuzukiHealthSensor(coordinator))
+    async_add_entities(entities)
 
 
 class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
@@ -142,3 +146,29 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self._status)
+
+
+class SuzukiHealthSensor(SuzukiConnectEntity, SensorEntity):
+    """Overall vehicle health (opt-in; separate endpoint)."""
+
+    _attr_translation_key = "vehicle_health"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "vehicle_health")
+
+    @property
+    def native_value(self) -> Any:
+        health = self.coordinator.data.health
+        return health.status if health else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        health = self.coordinator.data.health
+        if not health:
+            return None
+        return {
+            "drivable_advice": health.drivable_advice,
+            "failure_count": health.failure_count,
+            "last_updated": health.last_updated,
+        }
