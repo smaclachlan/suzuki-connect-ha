@@ -131,13 +131,15 @@ class SuzukiAuth:
         refresh = _find(data, "refresh_token")
         if refresh:
             self.refresh_token = refresh
-        # expiresIn units are unconfirmed (observed 240); treat as seconds, which
-        # at worst just refreshes a little more often than necessary.
-        expires_in = _find(data, "expiresIn", "expires_in") or 240
+        # expiresIn units are unconfirmed (observed 240); treat as seconds and
+        # clamp to a sane window so a surprising value can't make us either
+        # hammer refreshes or hold a token far past its real lifetime. A 401 on
+        # any call still triggers a reactive refresh regardless.
         try:
-            self._expires_at = time.time() + float(expires_in)
+            expires_in = float(_find(data, "expiresIn", "expires_in") or 240)
         except (TypeError, ValueError):
-            self._expires_at = time.time() + 240
+            expires_in = 240.0
+        self._expires_at = time.time() + max(60.0, min(expires_in, 3600.0))
 
     async def _post_form(self, path: str, fields: dict[str, str]) -> dict:
         # aiohttp sets Content-Type: application/x-www-form-urlencoded for a
