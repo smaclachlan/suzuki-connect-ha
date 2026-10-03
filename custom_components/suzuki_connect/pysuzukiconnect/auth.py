@@ -140,10 +140,9 @@ class SuzukiAuth:
             self._expires_at = time.time() + 240
 
     async def _post_form(self, path: str, fields: dict[str, str]) -> dict:
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": const.USER_AGENT,
-        }
+        # aiohttp sets Content-Type: application/x-www-form-urlencoded for a
+        # dict passed as `data`, so we only add our own User-Agent.
+        headers = {"User-Agent": const.USER_AGENT}
         async with self._session.post(
             self._base_url + path, data=fields, headers=headers
         ) as resp:
