@@ -144,7 +144,9 @@ async def test_one_vehicle_failing_keeps_the_other(hass, patch_session, freezer)
     del backend.dashboards[111111]  # SWIFT's telematics now erroring
     await coordinator.async_refresh()
     assert coordinator.last_update_success
-    assert "111111" in coordinator.last_error
+    assert "SWIFT (vehicle 1)" in coordinator.last_error
+    # Contract ids are redacted from diagnostics, so must not appear here.
+    assert "111111" not in coordinator.last_error
     # Last known values are kept for the failing car; the other updates.
     assert hass.states.get("sensor.swift_state_of_charge").state == "62"
     assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
@@ -152,6 +154,30 @@ async def test_one_vehicle_failing_keeps_the_other(hass, patch_session, freezer)
     del backend.dashboards[999999]  # now both fail -> the poll fails
     await coordinator.async_refresh()
     assert not coordinator.last_update_success
+
+
+async def test_vehicle_failing_first_poll_still_gets_entities(hass, patch_session):
+    # A car whose status fails on the first poll used to get no entities until
+    # the integration was reloaded; now they exist, unavailable, and recover.
+    backend = patch_session
+    _second_vehicle(backend)
+    swift = backend.dashboards.pop(111111)
+    entry = _entry(**{CONF_CONTRACT_IDS: [999999, 111111]})
+    await _setup(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
+
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert sorted(d.name for d in devices) == ["SWIFT", "e VITARA"]
+    assert hass.states.get("sensor.swift_state_of_charge").state == "unavailable"
+    assert hass.states.get("sensor.swift_range").state == "unavailable"
+    assert hass.states.get("binary_sensor.swift_charging").state == "unavailable"
+    assert hass.states.get("device_tracker.swift_location").state == "unavailable"
+    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
+
+    backend.dashboards[111111] = swift
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.swift_state_of_charge").state == "62"
 
 
 async def test_energy_sensors_follow_capacity_and_target(hass, patch_session):

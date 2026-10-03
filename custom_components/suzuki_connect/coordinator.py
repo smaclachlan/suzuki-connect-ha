@@ -101,6 +101,9 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         # Absent on entries created before vehicle selection existed: fall
         # back to the first EV, as before.
         self._contract_ids: list[int] | None = entry.data.get(CONF_CONTRACT_IDS)
+        # The selected vehicles from the latest vehicle list, including any
+        # whose status call failed, so their entities exist (as unavailable).
+        self.vehicles: dict[int, Vehicle] = {}
         self._enable_health = entry.options.get(CONF_ENABLE_HEALTH, False)
         self._health: dict[int, VehicleHealth] = {}
         self._health_at: dict[int, float] = {}
@@ -145,16 +148,21 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         started = time.monotonic()
         try:
             selected = self._select_vehicles(await self.client.async_get_vehicles())
+            self.vehicles = {v.contract_id: v for v in selected}
             result: dict[int, VehicleData] = {}
             failures: list[str] = []
-            for vehicle in selected:
+            for position, vehicle in enumerate(selected, start=1):
                 cid = vehicle.contract_id
                 try:
                     status = await self.client.async_get_status(cid)
                 except SuzukiApiError as err:
                     # One car failing (e.g. telematics unreachable) shouldn't
                     # blank the others; keep its last snapshot if we have one.
-                    failures.append(f"{cid}: {err}")
+                    # Labelled by name and position, not contract id, as this
+                    # reaches logs and diagnostics.
+                    failures.append(
+                        f"{vehicle.brand or 'Suzuki'} (vehicle {position}): {err}"
+                    )
                     if self.data and cid in self.data.vehicles:
                         result[cid] = self.data.vehicles[cid]
                     continue

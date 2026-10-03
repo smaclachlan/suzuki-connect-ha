@@ -170,7 +170,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = []
-    for cid in coordinator.data.vehicles:
+    for cid in coordinator.vehicles:
         entities.extend(SuzukiConnectSensor(coordinator, cid, d) for d in SENSORS)
         entities.append(SuzukiLastPolledSensor(coordinator, cid))
         if entry.options.get(CONF_ENABLE_HEALTH):
@@ -196,7 +196,9 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self) -> str | None:
         if self.entity_description.unit_fn:
-            return self.entity_description.unit_fn(self._status)
+            # Read even while unavailable, before the car has ever reported.
+            status = self._status
+            return self.entity_description.unit_fn(status) if status else None
         return self.entity_description.native_unit_of_measurement
 
     @property

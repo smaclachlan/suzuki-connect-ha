@@ -1,0 +1,2 @@
+# Test dependencies (pinned; Dependabot proposes updates).
+pytest-homeassistant-custom-component==0.13.368
