@@ -151,7 +151,8 @@ class VehicleStatus:
             defroster_on=(_int(ud.get("defrosterOn_st")) or 0) != 0,
             seat_heater_on=(_int(ud.get("seatHeaterOn_st")) or 0) != 0,
             steering_heater_on=(_int(ud.get("steeringHeaterOn_st")) or 0) != 0,
-            doors_locked=(_int(ud.get("doorlock_st")) or 0) != 0,
+            # doorlock_st: 0 = locked, non-zero = unlocked (confirmed on vehicle)
+            doors_locked=(_int(ud.get("doorlock_st")) == 0),
             ignition_on=(_int(ud.get("ignition_status")) or 0) != 0,
             location=_gps(ud.get("latestGPS") or ud.get("GPS")),
             odometer=_num(ud.get("mileage")),
