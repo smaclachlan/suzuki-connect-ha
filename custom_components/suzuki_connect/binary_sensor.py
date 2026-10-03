@@ -10,6 +10,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -67,6 +68,55 @@ BINARY_SENSORS: tuple[SuzukiBinaryDescription, ...] = (
         translation_key="climate_active",
         device_class=BinarySensorDeviceClass.RUNNING,
         value_fn=_climate_active,
+    ),
+    # --- granular climate states: opt-in (disabled by default) ---
+    SuzukiBinaryDescription(
+        key="air_conditioning",
+        translation_key="air_conditioning",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.ac_on,
+    ),
+    SuzukiBinaryDescription(
+        key="battery_preconditioning",
+        translation_key="battery_preconditioning",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.battery_preconditioning,
+    ),
+    SuzukiBinaryDescription(
+        key="defogger",
+        translation_key="defogger",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.defogger_on,
+    ),
+    SuzukiBinaryDescription(
+        key="defroster",
+        translation_key="defroster",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.defroster_on,
+    ),
+    SuzukiBinaryDescription(
+        key="seat_heater",
+        translation_key="seat_heater",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.seat_heater_on,
+    ),
+    SuzukiBinaryDescription(
+        key="steering_heater",
+        translation_key="steering_heater",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.steering_heater_on,
     ),
 )
 

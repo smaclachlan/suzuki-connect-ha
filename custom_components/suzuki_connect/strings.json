@@ -53,7 +53,13 @@
       "charger_connected": { "name": "Charger connected" },
       "doors_locked": { "name": "Door lock" },
       "ignition": { "name": "Ignition" },
-      "climate_active": { "name": "Climate active" }
+      "climate_active": { "name": "Climate active" },
+      "air_conditioning": { "name": "Air conditioning" },
+      "battery_preconditioning": { "name": "Battery preconditioning" },
+      "defogger": { "name": "Defogger" },
+      "defroster": { "name": "Defroster" },
+      "seat_heater": { "name": "Seat heater" },
+      "steering_heater": { "name": "Steering wheel heater" }
     },
     "device_tracker": {
       "car": { "name": "Location" }
