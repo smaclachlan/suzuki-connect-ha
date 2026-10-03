@@ -47,7 +47,8 @@
       "range": { "name": "Range" },
       "remaining_charge_time": { "name": "Remaining charge time" },
       "odometer": { "name": "Odometer" },
-      "last_updated": { "name": "Last updated" },
+      "last_reported_by_car": { "name": "Last reported by car" },
+      "last_polled": { "name": "Last polled" },
       "average_consumption": { "name": "Average consumption" },
       "vehicle_speed": { "name": "Speed" },
       "vehicle_health": { "name": "Vehicle health" }

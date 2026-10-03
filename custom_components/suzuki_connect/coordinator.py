@@ -4,12 +4,14 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .pysuzukiconnect import (
     SuzukiConnectClient,
@@ -70,6 +72,9 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self._enable_health = entry.options.get(CONF_ENABLE_HEALTH, False)
         self._health: VehicleHealth | None = None
         self._health_at: float = 0.0
+        # When HA last successfully synced with the cloud (distinct from the
+        # car's own "last reported" time carried in the data).
+        self.last_polled: datetime | None = None
 
     async def _async_update_data(self) -> SuzukiData:
         try:
@@ -81,6 +86,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
             raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
         except SuzukiConnectError as err:
             raise UpdateFailed(f"Error fetching Suzuki data: {err}") from err
+        self.last_polled = dt_util.utcnow()
         return SuzukiData(vehicle=vehicle, status=status, health=health)
 
     async def _maybe_fetch_health(self, contract_id: int) -> VehicleHealth | None:

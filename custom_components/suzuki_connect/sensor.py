@@ -84,9 +84,11 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfLength.KILOMETERS,
         value_fn=lambda s: s.odometer,
     ),
+    # Freshness of the telematics data itself (car -> cloud, ~every minute when
+    # the car is awake). Distinct from "Last polled" (HA -> cloud).
     SuzukiSensorDescription(
         key="last_updated",
-        translation_key="last_updated",
+        translation_key="last_reported_by_car",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_registry_enabled_default=True,
         value_fn=lambda s: _as_local(s.last_updated),
@@ -123,6 +125,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         SuzukiConnectSensor(coordinator, description) for description in SENSORS
     ]
+    entities.append(SuzukiLastPolledSensor(coordinator))
     if entry.options.get(CONF_ENABLE_HEALTH):
         entities.append(SuzukiHealthSensor(coordinator))
     async_add_entities(entities)
@@ -146,6 +149,21 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self._status)
+
+
+class SuzukiLastPolledSensor(SuzukiConnectEntity, SensorEntity):
+    """When Home Assistant last successfully synced with the cloud."""
+
+    _attr_translation_key = "last_polled"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "last_polled")
+
+    @property
+    def native_value(self) -> Any:
+        return self.coordinator.last_polled
 
 
 class SuzukiHealthSensor(SuzukiConnectEntity, SensorEntity):
