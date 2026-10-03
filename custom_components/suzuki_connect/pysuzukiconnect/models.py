@@ -117,6 +117,7 @@ class VehicleStatus:
     ignition_on: Optional[bool] = None
     location: Optional[tuple[float, float]] = None
     odometer: Optional[float] = None
+    vehicle_speed: Optional[float] = None
     average_consumption: Optional[float] = None
     average_consumption_unit: Optional[str] = None
     last_updated: Optional[datetime] = None
@@ -166,6 +167,7 @@ class VehicleStatus:
             ignition_on=_bool_int(ud.get("ignition_status")),
             location=_gps(ud.get("latestGPS") or ud.get("GPS")),
             odometer=_num(ud.get("mileage")),
+            vehicle_speed=_num(ud.get("vehicleSpeed")),
             average_consumption=_num(ud.get("averageConsumption")),
             average_consumption_unit=ud.get("averageConsumptionUnit"),
             last_updated=last_updated,

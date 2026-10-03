@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfLength
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfLength, UnitOfSpeed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -89,6 +89,26 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_registry_enabled_default=True,
         value_fn=lambda s: _as_local(s.last_updated),
+    ),
+    # --- opt-in diagnostics (disabled by default) ---
+    SuzukiSensorDescription(
+        key="average_consumption",
+        translation_key="average_consumption",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.average_consumption,
+        unit_fn=lambda s: s.average_consumption_unit,
+    ),
+    SuzukiSensorDescription(
+        key="vehicle_speed",
+        translation_key="vehicle_speed",
+        device_class=SensorDeviceClass.SPEED,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.vehicle_speed,
     ),
 )
 
