@@ -127,10 +127,12 @@ subscription** is on.
 <details>
 <summary><b>Disabled by default</b> (enable them in the entity settings)</summary>
 
-Under Diagnostic: Average consumption, Speed, the individual climate states
+Under Diagnostic: Vehicle health (Suzuki hasn't returned anything for it
+so far), Average consumption, Speed, the individual climate states
 (Climate air conditioning, battery preconditioning, defogger, defroster, seat
 heater, steering wheel heater) and body states (Hazard lights, Headlights,
-Handbrake, Seatbelt, Bonnet, Boot).
+Handbrake, Seatbelt, Bonnet, Boot). Speed, Seatbelt, Bonnet and Boot haven't
+been seen in Suzuki's data yet; they're kept in case they appear.
 
 </details>
 
@@ -380,8 +382,11 @@ still, check the file before attaching it to an issue.
 - **Not yet confirmed on a live car**: the trip meter (`drv_km`, assumed to be
   the resettable trip distance in km), charge and climate schedules while
   active, and the meaning of vehicle-health codes.
-- **Charging cable connected** is often missing from Suzuki's data. It shows
-  on while charging and unknown (not off) when Suzuki leaves it out.
+- **Charging cable connected**: Suzuki's live data rarely includes it. It shows
+  on while charging; otherwise, with extended data on, it comes from the
+  charging data (refreshed on the slow interval and as soon as charging or
+  the ignition changes). Without extended data it's unknown when not
+  charging.
 - **Not exposed yet**: geofences, alert settings and alert history. The
   endpoints are listed in [docs/API.md](docs/API.md).
 

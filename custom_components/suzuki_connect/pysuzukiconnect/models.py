@@ -488,6 +488,9 @@ class ChargingHistory:
     """``POST /api/v2/remoteCharge/charging_history``."""
 
     sessions: list[ChargeSession] = field(default_factory=list)  # newest first
+    # Plug state at fetch time (chargerConnectedStatus, seen live as 1 while
+    # plugged in). The dashboard's chargerConnected_st is usually absent.
+    charger_connected: Optional[bool] = None
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -497,7 +500,11 @@ class ChargingHistory:
         # Keep the API's order when times don't parse; otherwise newest first.
         if all(s.time is not None for s in sessions):
             sessions.sort(key=lambda s: s.time, reverse=True)
-        return cls(sessions=sessions, raw=data)
+        return cls(
+            sessions=sessions,
+            charger_connected=_bool_int(data.get("chargerConnectedStatus")),
+            raw=data,
+        )
 
 
 @dataclass

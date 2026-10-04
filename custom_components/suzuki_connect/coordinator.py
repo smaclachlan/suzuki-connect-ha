@@ -61,6 +61,19 @@ FIELD_HOLD_POLLS = 3
 NEVER_HELD = frozenset({"chargerConnected_st"})
 
 
+def _fill_charger_connected(vdata: "VehicleData") -> None:
+    """Use the charging data's plug state when the live field is missing.
+
+    Order: the dashboard's chargerConnected_st (rarely sent), "charging means
+    plugged in" (from the model), then chargerConnectedStatus from charging
+    data, which is refreshed on the slow interval and whenever charging or
+    ignition changes.
+    """
+    status, ext = vdata.status, vdata.extended
+    if status.charger_connected is None and ext and ext.charging:
+        status.charger_connected = ext.charging.charger_connected
+
+
 def _months_between(start: datetime, end: datetime) -> list[str]:
     """yyyy-MM for every month overlapping [start, end)."""
     months = []
@@ -165,6 +178,11 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         # Per car, for diagnostics: fields currently held, and per field how
         # often it has been missing since startup and its longest run.
         self.held_fields: dict[int, list[str]] = {}
+        # Per car: (charging, ignition) at the last poll. A change usually
+        # means the cable was plugged in or out, so charging data (which has
+        # the real plug state) is fetched then rather than waiting.
+        self._plug_signals: dict[int, tuple] = {}
+        self._charging_due: set[int] = set()
         self.field_gaps: dict[int, dict[str, dict[str, int]]] = {}
         slow_minutes = entry.options.get(CONF_SLOW_INTERVAL_MINUTES)
         self._slow_interval = (
@@ -227,6 +245,10 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
                     status = self._hold_missing_fields(
                         cid, await self.client.async_get_status(cid)
                     )
+                    signal = (status.is_charging, status.ignition_on)
+                    if self._plug_signals.get(cid, signal) != signal:
+                        self._charging_due.add(cid)
+                    self._plug_signals[cid] = signal
                 except SuzukiApiError as err:
                     # One car failing (e.g. telematics unreachable) shouldn't
                     # blank the others; keep its last snapshot if we have one.
@@ -243,8 +265,10 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
             if failures and len(failures) == len(selected):
                 raise SuzukiApiError("; ".join(failures))
             await self._maybe_fetch_extended(list(result))
+            await self._fetch_charging_now(list(result))
             for cid, vdata in result.items():
                 vdata.extended = self._extended.get(cid)
+                _fill_charger_connected(vdata)
         except SuzukiAuthError as err:
             self._record_failure(err)
             # Credentials no longer work (the client already retries with a
@@ -406,13 +430,33 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
                 if value is not None:
                     setattr(ext, attr, value)
             if ext.charging is not None:
-                log = self._charge_log.setdefault(cid, {})
-                for session in ext.charging.sessions:
-                    if session.time is not None:
-                        log[session.time] = session
+                self._log_charging(cid, ext.charging)
         # If everything failed (e.g. a transient outage), try again next poll.
         if succeeded:
             self._extended_at = now
+            self._charging_due.clear()  # just fetched
+
+    async def _fetch_charging_now(self, contract_ids: list[int]) -> None:
+        """Fetch charging data for cars whose charging or ignition state just
+        changed (likely a plug in/out), outside the slow interval."""
+        if not self._enable_extended:
+            self._charging_due.clear()
+            return
+        for cid in [c for c in contract_ids if c in self._charging_due]:
+            self._charging_due.discard(cid)
+            try:
+                charging = await self.client.async_get_charging_history(cid)
+            except SuzukiConnectError as err:
+                _LOGGER.debug("Fetching charging data failed: %s", err)
+                continue
+            self._extended.setdefault(cid, ExtendedData()).charging = charging
+            self._log_charging(cid, charging)
+
+    def _log_charging(self, cid: int, charging: ChargingHistory) -> None:
+        log = self._charge_log.setdefault(cid, {})
+        for session in charging.sessions:
+            if session.time is not None:
+                log[session.time] = session
 
     async def _fetch_trips(self, fetch) -> DrivingHistory | None:
         """This month's trips plus last month's, so the latest trip survives

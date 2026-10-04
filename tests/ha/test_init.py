@@ -816,3 +816,75 @@ async def test_charger_connected_is_never_held(hass, patch_session, freezer):
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     assert hass.states.get("binary_sensor.e_vitara_charging_cable_connected").state == "unknown"
+
+
+def _charging_with_plug(connected: int) -> dict:
+    payload = load_fixture("charging_history.json")
+    payload["result"]["data"]["chargerConnectedStatus"] = connected
+    return payload
+
+
+async def test_charger_connected_from_charging_data(hass, patch_session, freezer):
+    # Live dashboard has no chargerConnected_st and isn't charging (seen live
+    # after a charge finished): use the charging data's plug state.
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    for connected, expected in ((1, "on"), (0, "off")):
+        backend.session.route(
+            "POST", api.EP_CHARGING_HISTORY,
+            lambda call, c=connected: (200, _charging_with_plug(c)),
+        )
+        entry = _extended_entry()
+        await _setup(hass, entry)
+        state = hass.states.get("binary_sensor.e_vitara_charging_cable_connected")
+        assert state.state == expected
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
+
+
+async def test_charger_connected_without_extended_stays_unknown(hass, patch_session):
+    await _setup(hass, _entry())
+    state = hass.states.get("binary_sensor.e_vitara_charging_cable_connected")
+    assert state.state == "unknown"
+
+
+async def test_charging_change_fetches_plug_state_early(hass, patch_session, freezer):
+    # Charging/ignition changes (likely plug in/out) refresh charging data
+    # straight away instead of waiting for the slow interval.
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    calls = lambda: len(backend.session.calls_to(api.EP_CHARGING_HISTORY))  # noqa: E731
+    assert calls() == 1
+
+    freezer.tick(60)
+    await coordinator.async_refresh()  # nothing changed
+    assert calls() == 1
+
+    charging = load_fixture("dashboard_charging.json")
+    backend.session.route(
+        "POST", api.EP_DASHBOARD,
+        lambda call: (200, charging) if backend.authorised(call) else (401, {}),
+    )
+    freezer.tick(60)
+    await coordinator.async_refresh()  # charging started -> fetch now
+    assert calls() == 2
+    freezer.tick(60)
+    await coordinator.async_refresh()  # still charging -> no extra fetch
+    assert calls() == 2
+
+
+async def test_vehicle_health_hidden_by_default(hass, patch_session):
+    entry = _entry()
+    entry = MockConfigEntry(
+        domain=DOMAIN, title=entry.title, unique_id=EMAIL, version=1, minor_version=2,
+        data=dict(entry.data), options={"enable_health": True},
+    )
+    await _setup(hass, entry)
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, "999999_vehicle_health")
+    assert registry.async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION
