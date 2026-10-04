@@ -72,19 +72,37 @@ def first_error(payload: Any) -> Optional[dict]:
     return err if isinstance(err, dict) else {}
 
 
-def _login_field(payload: dict, name: str) -> Any:
-    """Read a login response field.
+def _login_field(payload: dict, *names: str) -> Any:
+    """Read a login/refresh response field, trying each of ``names``.
 
-    Tokens are top-level in the login response (docs/API.md); also accept the
-    standard ``result.data`` envelope, but never search deeper, so a same-named
-    key in some unrelated nested object can't be mistaken for a token.
+    Where the tokens sit differs by response (docs/API.md): top-level in the
+    password login; under ``result`` in a refresh (the app's
+    TokenUpdateResponse: ``result.access_token`` / ``result.refresh_token``,
+    or ``result.data.tkn``). Only these three levels are searched, so a
+    same-named key in some unrelated nested object can't be mistaken for a
+    token.
     """
-    value = payload.get(name)
-    if value in (None, ""):
-        result = payload.get("result")
-        data = result.get("data") if isinstance(result, dict) else None
-        value = data.get(name) if isinstance(data, dict) else None
-    return value if value not in (None, "") else None
+    result = payload.get("result")
+    result = result if isinstance(result, dict) else {}
+    data = result.get("data")
+    data = data if isinstance(data, dict) else {}
+    for level in (payload, result, data):
+        for name in names:
+            value = level.get(name)
+            if value not in (None, ""):
+                return value
+    return None
+
+
+def _shape(payload: dict) -> str:
+    """Key names (never values) at the levels tokens are looked for."""
+    result = payload.get("result")
+    keys = sorted(payload)
+    if isinstance(result, dict):
+        keys += [f"result.{k}" for k in sorted(result)]
+        if isinstance(result.get("data"), dict):
+            keys += [f"result.data.{k}" for k in sorted(result["data"])]
+    return ", ".join(keys)[:300]
 
 
 def jwt_expiry(token: Optional[str]) -> Optional[float]:
@@ -292,9 +310,11 @@ class SuzukiAuth:
             self.on_tokens_updated()
 
     def _store_tokens(self, data: dict) -> None:
-        token = _login_field(data, "access_token")
+        token = _login_field(data, "access_token", "tkn")
         if not token:
-            raise SuzukiAuthError("login/refresh returned no access_token")
+            raise SuzukiAuthError(
+                f"login/refresh returned no access_token (keys: {_shape(data)})"
+            )
         self.access_token = token
         self.last_access_token = token
         refresh = _login_field(data, "refresh_token")
@@ -304,7 +324,8 @@ class SuzukiAuth:
         self._token_obtained_at = now
         # expiresIn (observed 240, units unknown) is recorded but not used: the
         # official app ignores it too and refreshes only on a 401.
-        self.reported_expires_in = _login_field(data, "expiresIn")
+        # Only the password login carries it; keep it across refreshes.
+        self.reported_expires_in = _login_field(data, "expiresIn") or self.reported_expires_in
         exp = jwt_expiry(token)
         if exp is None:
             self._expires_at = None  # unknown: use until rejected
