@@ -121,7 +121,7 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         key="last_updated",
         translation_key="last_reported_by_car",
         device_class=SensorDeviceClass.TIMESTAMP,
-        entity_registry_enabled_default=True,
+        entity_category=EntityCategory.DIAGNOSTIC,
         # A TIMESTAMP sensor must be tz-aware or HA marks it unavailable.
         value_fn=lambda s, e: e.coordinator.vehicle_time(s.last_updated),
     ),
