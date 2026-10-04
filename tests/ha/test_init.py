@@ -706,3 +706,16 @@ async def test_readme_recent_trips_card_renders(hass, patch_session, freezer):
     assert rows[0].startswith("| Date | Time | Distance")
     assert len(rows) == 2 + 2  # header, separator, two trips
     assert "1042.5 km" in rows[2] and "72 min" in rows[2] and "51%" in rows[2]
+
+
+async def test_recent_sessions_attribute(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    await _setup(hass, _extended_entry())
+    state = hass.states.get("sensor.e_vitara_charging_last_session")
+    sessions = state.attributes["recent_sessions"]
+    assert [s["energy"] for s in sessions] == [13, 29]  # newest first
+    assert sessions[0]["start_level"] == 40 and sessions[0]["end_level"] == 62
+    assert "Services" not in json.dumps(sessions)
+    from custom_components.suzuki_connect.sensor import SuzukiExtendedSensor
+    assert "recent_sessions" in SuzukiExtendedSensor._unrecorded_attributes

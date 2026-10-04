@@ -30,6 +30,10 @@ class SuzukiConnectEntity(CoordinatorEntity[SuzukiConnectCoordinator]):
         )
 
     @property
+    def contract_id(self) -> int:
+        return self._contract_id
+
+    @property
     def available(self) -> bool:
         return super().available and self._vehicle_data is not None
 
