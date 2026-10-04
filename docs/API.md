@@ -59,6 +59,11 @@ Confirmed live: the access token is a JWT whose `exp` is 240 s after issue,
 and the server **enforces** it (tokens rejected at 244 s). The integration
 refreshes 30 s before `exp`, and on any 401.
 
+**Response shapes differ:** the password login has `access_token`,
+`refresh_token` and `expiresIn` at the top level; a refresh (the app's
+`TokenUpdateResponse`) nests them under `result` (`result.access_token`,
+`result.refresh_token`, or `result.data.tkn`), with no `expiresIn`.
+
 **A refresh must include the previous access token** (`access_token`), as the
 app's refresh does, even when that token has expired. Sending an empty one
 made every refresh fail, so each renewal fell back to a forced login

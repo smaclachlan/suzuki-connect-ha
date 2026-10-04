@@ -421,6 +421,38 @@ async def test_tokens_read_from_top_level_or_envelope_only(backend, clock):
     assert client.auth.access_token == "in-envelope"
 
 
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"access_token": "a2", "refresh_token": "r2"},             # result.*
+        {"data": {"tkn": "a2", "refresh_token": "r2"}},           # result.data.tkn
+    ],
+)
+async def test_refresh_response_shapes(backend, clock, result):
+    # Regression (seen live on 0.2.0): every refresh "returned no
+    # access_token", because refresh responses nest the tokens under result.
+    client = _client(backend)
+    await client.async_get_vehicles()
+    backend.session.route("POST", const.EP_LOGIN, lambda call: (200, {"errors": [], "result": result}))
+    backend.valid_access.add("a2")
+    backend.expire_access()
+    backend.valid_access.add("a2")
+    await client.async_get_vehicles()
+    assert client.auth.access_token == "a2" and client.auth.refresh_token == "r2"
+    assert client.auth.refresh_failures == 0 and client.auth.forced_logins == 1
+
+
+async def test_missing_token_error_names_keys_not_values(backend, clock):
+    backend.session.route(
+        "POST", const.EP_LOGIN,
+        lambda call: (200, {"errors": [], "result": {"secret_thing": "value-123"}}),
+    )
+    with pytest.raises(SuzukiAuthError) as exc:
+        await _client(backend).auth.async_login()
+    assert "result.secret_thing" in str(exc.value)
+    assert "value-123" not in str(exc.value)
+
+
 # -- redaction ------------------------------------------------------------------
 
 async def test_errors_do_not_leak_credentials(backend, clock):

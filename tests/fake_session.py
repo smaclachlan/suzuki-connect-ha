@@ -124,12 +124,19 @@ class FakeBackend:
         self.refresh_survives_eviction = False
         session.route("POST", EP_LOGIN, self._login)
 
-    def _mint(self) -> dict:
+    def _mint(self, refresh_shape: bool = False) -> dict:
         self.counter += 1
         access, refresh = f"access-{self.counter}", f"refresh-{self.counter}"
         self.valid_access.add(access)
         self.valid_refresh.add(refresh)
         self.issued_access.add(access)
+        if refresh_shape:
+            # A refresh (TokenUpdateResponse) nests the tokens under result;
+            # only a password login has them at the top level.
+            return {"errors": [], "result": {
+                "access_token": access, "refresh_token": refresh,
+                "ResultCode": "000000", "message": "", "title": "",
+            }}
         return envelope(access_token=access, refresh_token=refresh, expiresIn=240)
 
     def _login(self, call):
@@ -140,7 +147,7 @@ class FakeBackend:
                 return 400, error_envelope(400001, "Invalid refresh token")
             if self.refresh_needs_access_token and form["access_token"] not in self.issued_access:
                 return 400, error_envelope(400003, "Invalid access token")
-            return 200, self._mint()
+            return 200, self._mint(refresh_shape=True)
         self.logins.append(form["override"])
         if form["password"] != PASSWORD:
             return 400, error_envelope(400002, "Invalid credentials")
