@@ -176,14 +176,18 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         """Restore the saved refresh token so a restart refreshes rather than
         doing a forced login (which would log the owner's phone out)."""
         stored = await self._store.async_load() or {}
-        self.client.auth.restore_refresh_token(stored.get("refresh_token"))
+        self.client.auth.restore_tokens(
+            stored.get("refresh_token"), stored.get("access_token")
+        )
         self.client.auth.on_tokens_updated = self._schedule_token_save
 
     def _schedule_token_save(self) -> None:
-        self._store.async_delay_save(
-            lambda: {"refresh_token": self.client.auth.refresh_token},
-            TOKEN_SAVE_DELAY,
-        )
+        self._store.async_delay_save(self._token_data, TOKEN_SAVE_DELAY)
+
+    def _token_data(self) -> dict:
+        # The access token is kept because a refresh must send it.
+        auth = self.client.auth
+        return {"refresh_token": auth.refresh_token, "access_token": auth.last_access_token}
 
     async def async_flush_token(self) -> None:
         """Write the refresh token now and stop further saves.
@@ -194,7 +198,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         token on disk).
         """
         self.client.auth.on_tokens_updated = None
-        await self._store.async_save({"refresh_token": self.client.auth.refresh_token})
+        await self._store.async_save(self._token_data())
 
     async def _async_update_data(self) -> SuzukiData:
         self.last_attempt = dt_util.utcnow()

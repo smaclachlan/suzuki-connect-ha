@@ -211,25 +211,32 @@ def test_jwt_expiry():
         assert auth_mod.jwt_expiry(token) is None
 
 
-async def test_jwt_exp_is_not_acted_on(backend, clock):
-    # Refresh only on 401, even for a JWT past its exp; exp is diagnostic only.
+async def test_jwt_exp_is_refreshed_before_it_expires(backend, clock):
+    # Suzuki enforces the JWT exp (live: rejected at 244 s), so refresh 30 s
+    # before it rather than waiting for a 401.
     import time as real_time
-    token = _jwt(real_time.time() + 240)
+    tokens = iter([_jwt(real_time.time() + 240), _jwt(real_time.time() + 480)])
 
     def login(call):
+        token = next(tokens)
         backend.valid_access.add(token)
+        backend.issued_access.add(token)
         backend.valid_refresh.add("r")
-        backend.logins.append(call["data"]["override"])
+        if call["data"]["grant_type"] == "refresh_token":
+            backend.refreshes += 1
+        else:
+            backend.logins.append(call["data"]["override"])
         return 200, envelope(access_token=token, refresh_token="r", expiresIn=240)
 
     backend.session.route("POST", const.EP_LOGIN, login)
     client = _client(backend)
     await client.async_get_vehicles()
-    assert client.auth.token_expires_in is None
+    assert 200 < client.auth.token_expires_in <= 210
     assert -245 < client.auth.token_seconds_past_exp < -235
-    clock.now += 3600
+    clock.now += 215  # inside the 30 s margin before exp
     await client.async_get_vehicles()
-    assert backend.refreshes == 0 and backend.logins == ["1"]
+    assert backend.refreshes == 1 and backend.logins == ["1"]
+    assert client.auth.tokens_rejected == 0  # refreshed proactively, no 401
 
 
 async def test_concurrent_requests_share_one_login(backend, clock):
@@ -343,13 +350,39 @@ async def test_restored_refresh_token_avoids_forced_login(backend, clock):
     # new client refreshes instead of evicting the phone with a forced login.
     first = _client(backend)
     await first.async_get_vehicles()
-    saved = first.auth.refresh_token
+    saved = (first.auth.refresh_token, first.auth.last_access_token)
 
     second = _client(backend)
-    second.auth.restore_refresh_token(saved)
+    second.auth.restore_tokens(*saved)
     await second.async_get_vehicles()
     assert backend.logins == ["1"] and backend.refreshes == 1
 
+
+async def test_refresh_after_401_sends_the_rejected_access_token(backend, clock):
+    # Regression (seen live): a 401 cleared the access token, so the refresh
+    # went out with an empty one, was refused, and every renewal became a
+    # forced login that logged the phone out.
+    client = _client(backend)
+    await client.async_get_vehicles()
+    rejected = client.auth.access_token
+    backend.expire_access()
+    await client.async_get_vehicles()
+    assert backend.logins == ["1"] and backend.refreshes == 1
+    [refresh] = [c for c in backend.session.calls_to(const.EP_LOGIN)
+                 if c["data"]["grant_type"] == "refresh_token"]
+    assert refresh["data"]["access_token"] == rejected
+    assert client.auth.forced_logins == 1 and client.auth.refresh_failures == 0
+
+
+async def test_refresh_failure_is_recorded(backend, clock):
+    client = _client(backend)
+    await client.async_get_vehicles()
+    backend.evict()  # refresh token no longer valid either
+    clock.now += const.FORCED_LOGIN_COOLDOWN
+    await client.async_get_vehicles()
+    assert client.auth.refresh_failures == 1
+    assert "Invalid refresh token" in client.auth.last_refresh_error
+    assert client.auth.forced_logins == 2
 
 async def test_stale_restored_refresh_token_falls_back_to_login(backend, clock):
     client = _client(backend)

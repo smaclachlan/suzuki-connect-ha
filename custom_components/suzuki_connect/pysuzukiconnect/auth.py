@@ -9,11 +9,13 @@ Forced logins are additionally rate-limited (FORCED_LOGIN_COOLDOWN) so that if
 the phone keeps reclaiming the session, a poll fails rather than the two
 devices evicting each other several times a minute.
 
-Token lifetime: like the official app, which ignores ``expiresIn`` and only
-refreshes when a call returns 401, an access token is used until the server
-rejects it. The token is a JWT whose ``exp`` is 240 s after issue, but whether
-Suzuki enforces it is unknown, so ``exp`` is only recorded (for diagnostics),
-not acted on.
+Token lifetime: the access token is a JWT whose ``exp`` is 240 s after issue,
+and Suzuki enforces it (live: tokens rejected at 244 s). It is refreshed 30 s
+before ``exp``; a 401 still triggers a refresh, as in the official app.
+
+A refresh sends the previous access token along with the refresh token, as
+the app does, even when that access token has expired or been rejected:
+without it the refresh failed and every renewal became a forced login.
 """
 from __future__ import annotations
 
@@ -124,6 +126,9 @@ class SuzukiAuth:
 
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
+        # The most recent access token, kept after it expires or is rejected:
+        # a refresh must send it (see module docstring).
+        self.last_access_token: Optional[str] = None
         # time.monotonic() deadline, immune to wall-clock jumps (NTP, DST);
         # None means no known expiry (use the token until it's rejected).
         self._expires_at: Optional[float] = None
@@ -142,6 +147,9 @@ class SuzukiAuth:
         self.reported_expires_in: Any = None
         self.tokens_rejected = 0
         self.last_rejected_token_age: Optional[float] = None  # seconds
+        self.refresh_failures = 0
+        self.last_refresh_error: Optional[str] = None
+        self.forced_logins = 0
 
     # -- public ---------------------------------------------------------
     @property
@@ -160,18 +168,28 @@ class SuzukiAuth:
                 try:
                     await self._refresh()
                     return self.access_token  # type: ignore[return-value]
-                except SuzukiAuthError:
+                except SuzukiAuthError as err:
                     # Refresh rejected (likely evicted by the phone) -> full login.
+                    self.refresh_failures += 1
+                    self.last_refresh_error = str(err)[:200]
                     self.refresh_token = None
             self._check_forced_login_allowed()
             await self.async_login(override=True)
+            self.forced_logins += 1
             self._last_forced_login = time.monotonic()
             return self.access_token  # type: ignore[return-value]
 
-    def restore_refresh_token(self, refresh_token: Optional[str]) -> None:
-        """Seed a refresh token saved from a previous run (no network call)."""
+    def restore_tokens(
+        self, refresh_token: Optional[str], access_token: Optional[str] = None
+    ) -> None:
+        """Seed tokens saved from a previous run (no network call). The access
+        token is only used to accompany the first refresh."""
         if refresh_token and not self.refresh_token:
             self.refresh_token = refresh_token
+            self.last_access_token = access_token or self.last_access_token
+
+    # Kept for callers of the 0.1 API.
+    restore_refresh_token = restore_tokens
 
     @property
     def token_valid(self) -> bool:
@@ -260,7 +278,7 @@ class SuzukiAuth:
             "grant_type": const.GRANT_REFRESH,
             "client_id": const.CLIENT_ID,
             "client_secret": const.CLIENT_SECRET,
-            "access_token": self.access_token or "",
+            "access_token": self.access_token or self.last_access_token or "",
             "refresh_token": self.refresh_token or "",
             **self._device_fields(),
         }
@@ -278,6 +296,7 @@ class SuzukiAuth:
         if not token:
             raise SuzukiAuthError("login/refresh returned no access_token")
         self.access_token = token
+        self.last_access_token = token
         refresh = _login_field(data, "refresh_token")
         if refresh:
             self.refresh_token = refresh
@@ -286,8 +305,14 @@ class SuzukiAuth:
         # expiresIn (observed 240, units unknown) is recorded but not used: the
         # official app ignores it too and refreshes only on a 401.
         self.reported_expires_in = _login_field(data, "expiresIn")
-        # No proactive expiry: refresh only on 401 (see module docstring).
-        self._expires_at = None
+        exp = jwt_expiry(token)
+        if exp is None:
+            self._expires_at = None  # unknown: use until rejected
+        else:
+            # Wall-clock exp converted once to the monotonic clock. Never less
+            # than a minute, so a skewed clock can't cause a refresh loop.
+            remaining = exp - datetime.now(timezone.utc).timestamp()
+            self._expires_at = now + max(60.0, remaining)
 
     async def _post_form(self, path: str, fields: dict[str, str]) -> dict:
         # aiohttp sets Content-Type: application/x-www-form-urlencoded for a
