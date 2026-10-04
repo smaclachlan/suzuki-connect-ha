@@ -173,9 +173,13 @@ class VehicleStatus:
     def from_dashboard(cls, dashboard_data: dict) -> "VehicleStatus":
         """Parse ``result.data.DASHBOARD_DATA`` into a status object."""
         ud = dashboard_data.get("user_data", {}) or {}
-        remaining = _int(ud.get("remainingChargingTime"))
-        if remaining is not None and remaining < 0:
-            remaining = None  # -1 means "not applicable"
+        # remainingChargingTime is in milliseconds (16800000 matched the app's
+        # "4h 40m"); -1 means "not applicable".
+        remaining_ms = _num(ud.get("remainingChargingTime"))
+        remaining = (
+            round(remaining_ms / 60000)
+            if remaining_ms is not None and remaining_ms >= 0 else None
+        )
 
         last_updated = parse_timestamp(dashboard_data.get("lut"))
 

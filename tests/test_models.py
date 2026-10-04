@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from pysuzukiconnect.models import (
     Vehicle,
     VehicleHealth,
@@ -79,9 +81,24 @@ def test_charging():
     assert s.is_charging is True
     assert s.charge_status_raw == 1
     assert s.charger_connected is True
-    assert s.remaining_charge_minutes == 95  # arrives as a string
+    assert s.remaining_charge_minutes == 95  # 5700000 ms, arrives as a string
     assert s.state_of_charge == 62
     assert s.range == 121.0
+
+
+@pytest.mark.parametrize(
+    "raw, minutes",
+    [
+        (16800000, 280),     # live value; the app showed "4h 40m"
+        ("16800000", 280),
+        (90000, 2),          # 1.5 min rounds to nearest
+        (0, 0),
+        (-1, None),          # not applicable
+    ],
+)
+def test_remaining_charge_time_is_milliseconds(raw, minutes):
+    s = VehicleStatus.from_dashboard({"user_data": {"remainingChargingTime": raw}})
+    assert s.remaining_charge_minutes == minutes
 
 
 def test_plugged_in_not_charging():

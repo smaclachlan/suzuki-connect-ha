@@ -132,7 +132,7 @@ The EV live state is at **`result.data.DASHBOARD_DATA.user_data`**:
 | `currentChargeLevel` | `47` | **SOC %** |
 | `driving_range` / `driving_range_unit` | `88` / `mile` | range |
 | `charge_st` | `0` | charging (0 = not charging) |
-| `remainingChargingTime` | `-1` | minutes remaining (-1 = n/a) |
+| `remainingChargingTime` | `-1` | **milliseconds** remaining (-1 = n/a); confirmed live: `16800000` = app's "4h 40m" |
 | `batteryPreconditioning_st` / `_consent` | `0` / `0` | battery precondition |
 | `averageConsumption` / `averageConsumptionUnit` | `0.2` / `miles/kWh` | efficiency |
 | `acOn_st`,`defoggerOn_st`,`defrosterOn_st`,`seatHeaterOn_st`,`steeringHeaterOn_st` | `0` | climate states |
