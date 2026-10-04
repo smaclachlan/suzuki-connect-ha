@@ -364,6 +364,7 @@ class Trip:
     """One trip from the driving history. Positions are not kept."""
 
     contract_id: Optional[int] = None
+    trip_id: Optional[str] = None
     start: Optional[datetime] = None          # naive local time
     end: Optional[datetime] = None
     distance: Optional[float] = None
@@ -371,12 +372,16 @@ class Trip:
     duration_minutes: Optional[float] = None
     average_consumption: Optional[float] = None
     average_consumption_unit: Optional[str] = None
+    battery_used_pct: Optional[int] = None
+    start_odometer: Optional[float] = None
+    end_odometer: Optional[float] = None
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_entry(cls, e: dict, trip_date: Any = None) -> "Trip":
         return cls(
             contract_id=_int(e.get("contractID")),
+            trip_id=_str(e.get("tripDetailsID")),
             start=_join_datetime(e.get("startDate") or trip_date, e.get("startTime")),
             end=_join_datetime(e.get("endDate") or trip_date, e.get("endTime")),
             distance=_num(e.get("tripDistance")),
@@ -384,6 +389,9 @@ class Trip:
             duration_minutes=parse_duration_minutes(e.get("trip_duration")),
             average_consumption=_num(e.get("avgConsumption")),
             average_consumption_unit=_str(e.get("avgConsumptionUnit")),
+            battery_used_pct=_int(e.get("BATTERY_USED_PR")),
+            start_odometer=_num(e.get("START_ODO")),
+            end_odometer=_num(e.get("END_ODO")),
             raw=e,
         )
 
@@ -399,6 +407,7 @@ class DrivingHistory:
     driving_score: Optional[float] = None
     harsh_acceleration_count: Optional[int] = None
     harsh_braking_count: Optional[int] = None
+    first_month: Optional[str] = None     # tripStartFrom: earliest yyyy-MM with trips
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -416,6 +425,10 @@ class DrivingHistory:
             driving_score=_num(report.get("drb_score")),
             harsh_acceleration_count=_int(report.get("harsh_acc_count")),
             harsh_braking_count=_int(report.get("harsh_break_count")),
+            first_month=(
+                start if re.fullmatch(r"\d{4}-\d{2}", start := str(data.get("tripStartFrom") or ""))
+                else None
+            ),
             raw=data,
         )
 
@@ -434,6 +447,7 @@ class DrivingHistory:
             driving_score=self.driving_score,
             harsh_acceleration_count=self.harsh_acceleration_count,
             harsh_braking_count=self.harsh_braking_count,
+            first_month=self.first_month or older.first_month,
             raw=self.raw,
         )
 
@@ -444,13 +458,15 @@ def _newest_first(trips: list[Trip]) -> list[Trip]:
 
 @dataclass
 class ChargeSession:
-    """One entry of the charging history. The charging location is not kept."""
+    """One entry of the charging history. ``time`` is when the session
+    started (live entries chain: 04:01 + 58 min -> next at 05:00). The
+    charging location is not kept."""
 
     time: Optional[datetime] = None
     duration_minutes: Optional[float] = None
     start_level: Optional[int] = None          # %
     end_level: Optional[int] = None            # %
-    energy: Optional[float] = None             # unit not reported
+    energy: Optional[float] = None             # kWh ("7 kWh" live)
     charge_type: Optional[str] = None
     raw: dict = field(default_factory=dict, repr=False)
 

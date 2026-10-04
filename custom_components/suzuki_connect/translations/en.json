@@ -94,6 +94,10 @@
       "charge_schedule": { "name": "Charging schedule" },
       "climate_schedule": { "name": "Climate schedule" }
     },
+    "calendar": {
+      "trip_history": { "name": "Trip history" },
+      "charging_history": { "name": "Charging history" }
+    },
     "number": {
       "battery_capacity": { "name": "Battery capacity" },
       "charge_target": { "name": "Charge target" }

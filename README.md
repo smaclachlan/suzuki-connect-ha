@@ -33,6 +33,7 @@ alphabetically):
 | Climate | Climate active; *opt-in:* Climate schedule |
 | Doors & driving | Doors, Doors lock, Ignition, Location, Odometer |
 | Trips | Trip meter; *opt-in:* Trip last distance, Trip last end, Trip distance this month |
+| Calendars (opt-in) | Trip history, Charging history (see [Trip and charging history](#trip-and-charging-history)) |
 | Configuration | Battery capacity, Charge target |
 | Diagnostic | Last reported by car, Last polled, Telemetry age; *opt-in:* Vehicle health, Subscription |
 
@@ -176,10 +177,52 @@ Settings → the integration → **Configure**:
     and end charge level, duration, energy and AC/DC type as attributes.
   - *Charging schedule* / *Climate schedule* are on when any schedule is
     active, with every schedule's settings as attributes.
+  - *Trip history* and *Charging history* calendars, and a recent-trips list;
+    see [Trip and charging history](#trip-and-charging-history).
   - Trip and charging locations and driver names are never exposed.
   - These response formats come from the app's code and haven't been checked
     against a live car yet. If something looks wrong, **Download diagnostics**
     includes the raw (redacted) responses.
+
+## Trip and charging history
+
+With extended data on, each car gets two calendars. Open **Calendar** in the
+sidebar to browse them:
+
+- **Trip history** — one event per trip: distance, duration and efficiency,
+  with battery used and odometer readings in the details. This and last
+  month are refreshed on the slow interval; when you browse to an older
+  month it's fetched once and kept (back to the account's first trip).
+- **Charging history** — one event per charging session: start → end level,
+  energy, duration and type. Suzuki only returns the latest few sessions, so
+  this fills in from when the integration started.
+
+Events appear after the trip or charge (on the next slow refresh), so use
+them for browsing, not as automation triggers.
+
+### Recent trips table
+
+*Trip last distance* has a `recent_trips` attribute with the last 10 trips
+(not stored in history, so it doesn't grow the database). To show them as a
+table, add a **Markdown** card to a dashboard (Edit dashboard → Add card →
+Markdown → Show code editor) and paste:
+
+<!-- recent-trips-card -->
+```yaml
+type: markdown
+title: Recent trips
+content: |
+  {% set trips = state_attr('sensor.e_vitara_trip_last_distance', 'recent_trips') or [] %}
+  | Date | Time | Distance | Duration | Efficiency | Battery |
+  |:--|:--|--:|--:|--:|--:|
+  {%- for t in trips %}
+  | {{ as_timestamp(t.start, 0) | timestamp_custom('%a %d %b') }} | {{ as_timestamp(t.start, 0) | timestamp_custom('%H:%M') }} | {{ t.distance if t.distance is not none else '–' }} {{ t.distance_unit or '' }} | {{ (t.duration_minutes or 0) | round | int }} min | {{ t.average_consumption if t.average_consumption is not none else '–' }} {{ t.average_consumption_unit or '' }} | {{ (t.battery_used_pct ~ '%') if t.battery_used_pct is not none else '–' }} |
+  {%- endfor %}
+```
+<!-- /recent-trips-card -->
+
+Replace the entity ID with your own: installs that started on 0.2.0b1 or
+b2 have `sensor.e_vitara_last_trip_distance`.
 
 ## Example: send the state of charge to Ohme
 
