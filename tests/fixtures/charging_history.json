@@ -9,30 +9,33 @@
       "chargingHistryListCount": 2,
       "chargingHistoryList": [
         {
-          "chargeTime": "2026-09-30 22:10:00",
-          "batteryChargedDuration": "3h 05m",
-          "batteryLevelAtStartCharge": "31",
-          "batteryLevelAtStopCharge": "80",
-          "energyConsumption": "29.4",
-          "chargeType": "AC",
-          "chargingStLatitude": 51.5,
-          "chargingStLongitude": -0.12,
-          "chargingStLocation": "Home",
-          "locationAvlFlg": true
-        },
-        {
-          "chargeTime": "2026-10-02 19:00:00",
-          "batteryChargedDuration": "0:45",
-          "batteryLevelAtStartCharge": "40",
-          "batteryLevelAtStopCharge": "62",
-          "energyConsumption": "13.2",
-          "chargeType": "DC",
+          "locationAvlFlg": true,
+          "chargeTime": "2026/10/02 19:00",
           "chargingStLatitude": 51.6,
           "chargingStLongitude": -0.2,
           "chargingStLocation": "Services",
-          "locationAvlFlg": true
+          "batteryChargedDuration": "00 h 45 min",
+          "energyConsumption": "13 kWh",
+          "chargeType": "Rapid",
+          "batteryLevelAtStartCharge": "40%",
+          "batteryLevelAtStopCharge": "62%"
+        },
+        {
+          "locationAvlFlg": true,
+          "chargeTime": "2026/09/30 22:10",
+          "chargingStLatitude": 51.5,
+          "chargingStLongitude": -0.12,
+          "chargingStLocation": "Home",
+          "batteryChargedDuration": "03 h 05 min",
+          "energyConsumption": "29 kWh",
+          "chargeType": "Slow",
+          "batteryLevelAtStartCharge": "31%",
+          "batteryLevelAtStopCharge": "80%"
         }
-      ]
+      ],
+      "lut": "2026-10-02 18:54:37",
+      "averageChargeAmount": 14,
+      "averageChargeAmountUnit": "kWh"
     }
   }
 }

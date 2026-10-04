@@ -16,7 +16,7 @@
       },
       "tripDetails": [
         {
-          "tripDate": "2026-10-02",
+          "tripDate": "2026/10/02",
           "tripList": [
             {
               "contractID": 999999,
@@ -32,8 +32,18 @@
               "avgConsumptionUnit": "km/kWh",
               "trip_driver_name": "Test Driver",
               "USR_TIMEZONE": "Europe/London",
-              "startPosition": [{ "latitude": 51.5, "longitude": -0.12 }],
-              "endPosition": [{ "latitude": 51.6, "longitude": -0.2 }]
+              "startPosition": [
+                {
+                  "latitude": 51.5,
+                  "longitude": -0.12
+                }
+              ],
+              "endPosition": [
+                {
+                  "latitude": 51.6,
+                  "longitude": -0.2
+                }
+              ]
             },
             {
               "contractID": 999999,
@@ -44,12 +54,32 @@
               "endTime": "18:52",
               "tripDistance": "1,042.5",
               "tripDistanceUnit": "km",
-              "trip_duration": "1:12",
+              "trip_duration": "01:12:00",
               "avgConsumption": "5.4",
               "avgConsumptionUnit": "km/kWh",
               "trip_driver_name": "Test Driver",
-              "startPosition": [{ "latitude": 51.6, "longitude": -0.2 }],
-              "endPosition": [{ "latitude": 51.5, "longitude": -0.12 }]
+              "startPosition": [
+                {
+                  "latitude": 51.6,
+                  "longitude": -0.2
+                }
+              ],
+              "endPosition": [
+                {
+                  "latitude": 51.5,
+                  "longitude": -0.12
+                }
+              ],
+              "TRIP_START_LAT": 51.6,
+              "TRIP_START_LONG": -0.2,
+              "TRIP_END_LAT": 51.5,
+              "TRIP_END_LONG": -0.12,
+              "START_ODO": 22491,
+              "END_ODO": 22631,
+              "BATTERY_USED_PR": 51,
+              "convertedStartTime": "18:40",
+              "convertedEndTime": "19:52",
+              "locale": "BST"
             }
           ]
         },

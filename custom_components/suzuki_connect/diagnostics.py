@@ -24,15 +24,20 @@ REDACTED = "**REDACTED**"
 # Credentials/identity, vehicle identifiers, and anything location-like.
 REDACT_WORDS = frozenset({
     "password", "pin", "token", "secret", "key", "mail", "email", "phone",
+    "mobile", "msisdn", "imei", "iccid", "unique", "tracking",
     "contact", "name", "address", "addr", "vin", "vrn", "contract", "gps",
-    "lat", "latitude", "lon", "lng", "longitude", "geo", "geofence",
+    "lat", "latitude", "lon", "long", "lng", "longitude", "geo", "geofence",
     "location", "dealer",
+    # Signed (credential-bearing) image URLs.
+    "image",
 })
 
 # Exact-match keys (our config entry, and ids that only redact as a pair).
 REDACT_KEYS = frozenset({
     CONF_EMAIL, CONF_PASSWORD, CONF_DEVICE_ID, CONF_CONTRACT_ID, CONF_CONTRACT_IDS,
     "deviceId", "unique_id",
+    # Encodes an account number and trip start time.
+    "trip_id",
 })
 
 _WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
@@ -106,6 +111,8 @@ async def async_get_config_entry_diagnostics(
             ),
             "access_token_is_jwt_with_exp": jwt_expiry(auth.access_token) is not None,
             "access_token_age_s": _round(auth.token_age),
+            # Positive: the token is still in use past its JWT exp.
+            "access_token_seconds_past_jwt_exp": _round(auth.token_seconds_past_exp),
             # Evidence for the real token lifetime (expiresIn is not used).
             "reported_expires_in": auth.reported_expires_in,
             "tokens_rejected": auth.tokens_rejected,

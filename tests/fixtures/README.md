@@ -10,8 +10,8 @@ Sanitised Suzuki Connect responses (contract ID, VIN and location replaced).
 | `dashboard_plugged_in_not_charging.json` | **synthetic**: plugged in, `charge_st=0` |
 | `dashboard_null_values.json` | **synthetic**: fields present but `null` |
 | `dashboard_dormant.json` | **synthetic**: stale `lut`, `user_data: null` |
-| `driving_history.json` | **synthetic**, from the app's decompiled `DrivingHistoryResponse`: two trips for 999999, one for another contract |
-| `charging_history.json` | **synthetic**, from `EvChargingHistoryResponse`; oldest first, to check sorting |
+| `driving_history.json` | shapes from a live account (`HH:MM:SS` durations, `TRIP_*_LAT/LONG`, `convertedStartTime`); values made up. Two trips for 999999, one for another contract |
+| `charging_history.json` | value formats from a live account (`2026/10/02 19:00`, `00 h 45 min`, `13 kWh`, `40%`); values and locations made up |
 | `charge_schedules.json` | **synthetic**, from `EvChargingScheduleResponse` |
 | `climate_schedules.json` | **synthetic**, from `GetAllScheduleListData` |
 | `subscription.json` | **synthetic**, from `SubscriptionResponse` |

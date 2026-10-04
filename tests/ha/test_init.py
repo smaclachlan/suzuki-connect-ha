@@ -533,3 +533,23 @@ async def test_diagnostics_show_raw_timestamp_and_zone(hass, patch_session):
     assert dashboard["lut"] == "2026-10-02 18:54:37"
     assert "user_data" not in dashboard
     assert "999999" not in json.dumps(dashboard)  # selectedContractId redacted
+
+
+async def test_last_reported_by_car_is_utc(hass, patch_session):
+    # lut "2026-10-02 18:54:37" is UTC, whatever HA's timezone.
+    await _setup(hass, _entry())
+    state = hass.states.get("sensor.e_vitara_last_reported_by_car")
+    assert state.state == "2026-10-02T18:54:37+00:00"
+
+
+async def test_diagnostics_redact_live_leaks(hass, patch_session, freezer):
+    # Fields seen unredacted in a real download: mobile number, trip
+    # longitudes, the trip id and a signed image URL.
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    dumped = json.dumps(await async_get_config_entry_diagnostics(hass, entry), default=str)
+    for secret in ("7700900123", "12345", "X-Amz-Credential", "t_123456_261002_1747",
+                   "-0.2", "-0.12", "51.6", "Services"):
+        assert secret not in dumped, secret

@@ -96,14 +96,14 @@ def test_empty_or_malformed_driving_history():
         assert DrivingHistory.from_response(payload).trips == []
 
 
-def test_charging_history_newest_first():
+def test_charging_history_live_formats():
     c = ChargingHistory.from_response(load_fixture("charging_history.json"))
     latest = c.sessions[0]
-    assert latest.time == datetime(2026, 10, 2, 19, 0)
-    assert latest.start_level == 40 and latest.end_level == 62
-    assert latest.energy == 13.2
-    assert latest.duration_minutes == 45
-    assert latest.charge_type == "DC"
+    assert latest.time == datetime(2026, 10, 2, 19, 0)       # "2026/10/02 19:00"
+    assert latest.start_level == 40 and latest.end_level == 62  # "40%"
+    assert latest.energy == 13                                # "13 kWh"
+    assert latest.duration_minutes == 45                      # "00 h 45 min"
+    assert latest.charge_type == "Rapid"
     assert c.sessions[1].duration_minutes == 185
     for secret in ("51.5", "Services", "Home"):
         assert secret not in repr(c)
@@ -132,6 +132,24 @@ def test_no_schedules_means_not_active():
 def test_subscription():
     s = Subscription.from_response(load_fixture("subscription.json"))
     assert (s.plan_name, s.plan_id, s.status) == ("Suzuki Connect Plus", "P1", 1)
+
+
+def test_subscription_from_vehicle_list():
+    entry = load_fixture("vehicles.json")["result"]["data"]["VEHICLE_DATA"][
+        "SECONDARY_VEHICLE_LIST"][0]
+    s = Subscription.from_details(entry["subscriptionDetails"])
+    assert (s.plan_name, s.plan_id, s.status) == ("Suzuki Connect Plus", "evitara2025_a_foc", 1)
+    assert Subscription.from_details(None).plan_name is None
+
+
+@pytest.mark.parametrize(
+    "raw, value",
+    [("7 kWh", 7), ("43%", 43), ("14,066.6", 14066.6), ("-3.5", -3.5), (12, 12),
+     ("N/A", None), ("", None), (None, None), (True, None)],
+)
+def test_lenient_numbers(raw, value):
+    from pysuzukiconnect.models import _num
+    assert _num(raw) == value
 
 
 # -- request formats (from the decompiled app) -------------------------------

@@ -11,8 +11,9 @@ devices evicting each other several times a minute.
 
 Token lifetime: like the official app, which ignores ``expiresIn`` and only
 refreshes when a call returns 401, an access token is used until the server
-rejects it. The one exception is a JWT carrying an ``exp`` claim, which is
-refreshed shortly before that time to save a failed request.
+rejects it. The token is a JWT whose ``exp`` is 240 s after issue, but whether
+Suzuki enforces it is unknown, so ``exp`` is only recorded (for diagnostics),
+not acted on.
 """
 from __future__ import annotations
 
@@ -185,6 +186,14 @@ class SuzukiAuth:
         return max(0.0, self._expires_at - 30 - time.monotonic())
 
     @property
+    def token_seconds_past_exp(self) -> Optional[float]:
+        """How far the current token is past its JWT ``exp`` (negative before
+        it). A token still in use well past ``exp`` means Suzuki doesn't
+        enforce it."""
+        exp = jwt_expiry(self.access_token) if self.access_token else None
+        return datetime.now(timezone.utc).timestamp() - exp if exp is not None else None
+
+    @property
     def token_age(self) -> Optional[float]:
         """Seconds since the current access token was issued."""
         if not self.access_token or self._token_obtained_at is None:
@@ -277,14 +286,8 @@ class SuzukiAuth:
         # expiresIn (observed 240, units unknown) is recorded but not used: the
         # official app ignores it too and refreshes only on a 401.
         self.reported_expires_in = _login_field(data, "expiresIn")
-        exp = jwt_expiry(token)
-        if exp is None:
-            self._expires_at = None
-        else:
-            # Wall-clock exp converted once to the monotonic clock. Never less
-            # than a minute, so a skewed clock can't cause a refresh loop.
-            remaining = exp - datetime.now(timezone.utc).timestamp()
-            self._expires_at = now + max(60.0, remaining)
+        # No proactive expiry: refresh only on 401 (see module docstring).
+        self._expires_at = None
 
     async def _post_form(self, path: str, fields: dict[str, str]) -> dict:
         # aiohttp sets Content-Type: application/x-www-form-urlencoded for a

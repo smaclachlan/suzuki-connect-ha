@@ -54,9 +54,11 @@ Same endpoint, `grant_type=refresh_token`, plus `access_token`, `refresh_token`,
 The login and refresh responses include `expiresIn` (observed `240`), but the
 app never reads it. Its OkHttp `Authenticator` (`jc/C2989j`) refreshes with
 `grant_type=refresh_token` only when a call returns **401**, then retries. The
-integration does the same; it also refreshes a little early if the access
-token is a JWT with an `exp` claim. Diagnostics record the age of each token
-when it was rejected, so the real lifetime can be observed.
+integration does the same. The access token is a JWT whose `exp` is 240 s
+after issue (confirmed live), but whether the server enforces it is unknown,
+so `exp` isn't acted on. Diagnostics show how far the current token is past
+`exp` (`access_token_seconds_past_jwt_exp`) and the age of each rejected token,
+so enforcement can be observed.
 
 ### Authorization
 A request interceptor adds `Authorization: Bearer <JWT>` to **every** call except
