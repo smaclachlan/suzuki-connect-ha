@@ -98,13 +98,16 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         native_unit_of_measurement="min",
         value_fn=lambda s, e: s.remaining_charge_minutes,
     ),
-    # drv_km: assumed to be the car's resettable trip meter, in km.
+    # drv_km, raw. Not a trip meter after all: live it rises and drops back
+    # to ~0 several times per drive, and no unit fits (as 0.01 km/mi it would
+    # mean 75 mph on a country road). So no unit, device class or state class
+    # (a "total increasing" meter would build bogus statistics from the
+    # drops), and hidden until its meaning is known. Key kept for the ID.
     SuzukiSensorDescription(
         key="trip_meter",
         translation_key="trip_meter",
-        device_class=SensorDeviceClass.DISTANCE,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
         value_fn=lambda s, e: s.trip_meter,
     ),
     SuzukiSensorDescription(

@@ -47,8 +47,8 @@ pull requests are welcome.
 
 - **Battery and charging** — battery level, range, charging state, cable,
   time remaining, and energy remaining / to your charge target.
-- **Doors and driving** — doors, lock, ignition, odometer, trip meter and
-  live location (device tracker).
+- **Doors and driving** — doors, lock, ignition, odometer and live location
+  (device tracker).
 - **Trips and charging history** — browse every trip and charging session in
   Home Assistant's Calendar, plus ready-made dashboard cards.
 - **Fast or gentle polling** — live data as often as every minute; slow-changing
@@ -100,7 +100,7 @@ poll. To change which cars are included, remove and re-add the integration.
 
 | Option | Default | Range | What it does |
 |---|---|---|---|
-| Live data poll interval | 15 min | 1–240 min | How often to fetch the live status (battery, charging, doors, location, trip meter). 1–2 min matches how often the car reports while driving. |
+| Live data poll interval | 15 min | 1–240 min | How often to fetch the live status (battery, charging, doors, location). 1–2 min matches how often the car reports while driving. |
 | Fetch vehicle health | Off | | Adds a *Vehicle health* sensor, fetched at most hourly. |
 | Fetch trips, charging history, schedules and subscription | Off | | Adds the trip, charging-session and schedule entities and the [history calendars](#trip-and-charging-history). |
 | Slow data refresh interval | 6 h | 30 min–24 h | How often to refresh the car list and, if enabled, trips, charging history and schedules. |
@@ -116,7 +116,7 @@ sit together on the device page:
 | **Charging** | Charging, Charging cable connected, Charging time remaining · *extended:* Charging last session, Charging schedule |
 | **Climate** | Climate active · *extended:* Climate schedule |
 | **Doors and driving** | Doors, Doors lock, Ignition, Location, Odometer |
-| **Trips** | Trip meter · *extended:* Trip last distance, Trip last end, Trip distance this month |
+| **Trips** | *extended:* Trip last distance, Trip last end, Trip distance this month |
 | **Calendars** | *extended:* Trip history, Charging history |
 | **Configuration** | Battery capacity, Charge target |
 | **Diagnostic** | Last reported by car, Last polled, Telemetry age · *options:* Vehicle health, Subscription |
@@ -128,7 +128,8 @@ subscription** is on.
 <summary><b>Disabled by default</b> (enable them in the entity settings)</summary>
 
 Under Diagnostic: Vehicle health (Suzuki hasn't returned anything for it
-so far), Average consumption, Speed, the individual climate states
+so far), Drive counter (raw) (Suzuki's `drv_km`; meaning unknown), Average
+consumption, Speed, the individual climate states
 (Climate air conditioning, battery preconditioning, defogger, defroster, seat
 heater, steering wheel heater) and body states (Hazard lights, Headlights,
 Handbrake, Seatbelt, Bonnet, Boot). Speed, Seatbelt, Bonnet and Boot haven't
@@ -379,9 +380,11 @@ still, check the file before attaching it to an issue.
 - **Timestamps**: *Last reported by car* is UTC. Trip and charging times come
   without a timezone and are read in Home Assistant's timezone, so set that to
   the car's.
-- **Not yet confirmed on a live car**: the trip meter (`drv_km`, assumed to be
-  the resettable trip distance in km), charge and climate schedules while
+- **Not yet confirmed on a live car**: charge and climate schedules while
   active, and the meaning of vehicle-health codes.
+- **Drive counter (raw)** is Suzuki's `drv_km` value as sent, hidden by
+  default. Despite the name it isn't a trip meter: it rises and drops back to
+  near zero several times during one drive, and its unit is unknown.
 - **Charging cable connected**: Suzuki's live data rarely includes it. It shows
   on while charging; otherwise, with extended data on, it comes from the
   charging data (refreshed on the slow interval and as soon as charging or

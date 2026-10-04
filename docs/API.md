@@ -160,7 +160,7 @@ The EV live state is at **`result.data.DASHBOARD_DATA.user_data`**:
 | `ignition_status`,`doorlock_st`,`opendoor_st`,`hzrd_st`,`prbrk_st`,`headlight_st` | | body/ignition |
 | `doorLockedRemotely`,`doorLockResponseTime`,`isDoorUnlockAllowed` | `Y` / ts / `N` | lock detail |
 | `latestGPS[0].latitude/longitude`, `GPS[0]...` | | location |
-| `mileage`, `drv_km` | `22632`, `153` | odometer (km) / trip meter (km, assumed resettable) |
+| `mileage`, `drv_km` | `22632`, `153` | odometer (km) / **unknown**: not a trip meter (live it rises and drops back to ~0 several times per drive; unit unclear) |
 | `fuel` | `46.7` | mirrors SOC for EV (≈ `currentChargeLevel`) |
 | `*Pending` (`doorLockPending`, `acONPending`, …) | `N` | in-flight remote-command flags |
 

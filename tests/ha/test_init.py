@@ -359,11 +359,17 @@ def _extended_entry(**options) -> MockConfigEntry:
     )
 
 
-async def test_trip_meter(hass, patch_session):
+async def test_drive_counter_is_raw_and_hidden(hass, patch_session):
+    # drv_km isn't a trip meter (live: it repeatedly drops back to ~0 within
+    # a drive), so it's a hidden, unitless diagnostic with no statistics.
     await _setup(hass, _entry())
-    state = hass.states.get("sensor.e_vitara_trip_meter")
-    assert float(state.state) == 153
-    assert state.attributes["unit_of_measurement"] == "km"
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, "999999_trip_meter")
+    entry = registry.async_get(entity_id)
+    assert entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    assert entry.entity_category is not None
+    assert entry.unit_of_measurement is None
+    assert entry.capabilities is None or "state_class" not in entry.capabilities
 
 
 async def test_extended_entities_only_when_enabled(hass, patch_session):
