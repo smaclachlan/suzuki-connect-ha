@@ -55,7 +55,7 @@
     "sensor": {
       "state_of_charge": { "name": "Battery level" },
       "range": { "name": "Battery range" },
-      "trip_meter": { "name": "Trip meter" },
+      "trip_meter": { "name": "Drive counter (raw)" },
       "remaining_charge_time": { "name": "Charging time remaining" },
       "odometer": { "name": "Odometer" },
       "last_reported_by_car": { "name": "Last reported by car" },

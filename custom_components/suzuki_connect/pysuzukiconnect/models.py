@@ -169,7 +169,7 @@ class VehicleStatus:
     boot_open: Optional[bool] = None
     location: Optional[tuple[float, float]] = field(default=None, repr=False)
     odometer: Optional[float] = None
-    trip_meter: Optional[float] = None   # drv_km; assumed a resettable trip (km)
+    trip_meter: Optional[float] = None   # drv_km, raw: meaning and unit unknown
     vehicle_speed: Optional[float] = None
     average_consumption: Optional[float] = None
     average_consumption_unit: Optional[str] = None
