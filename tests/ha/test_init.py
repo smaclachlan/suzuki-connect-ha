@@ -719,3 +719,100 @@ async def test_recent_sessions_attribute(hass, patch_session, freezer):
     assert "Services" not in json.dumps(sessions)
     from custom_components.suzuki_connect.sensor import SuzukiExtendedSensor
     assert "recent_sessions" in SuzukiExtendedSensor._unrecorded_attributes
+
+
+async def test_missing_fields_hold_last_value(hass, patch_session, freezer):
+    # Suzuki intermittently drops or blanks fields; 1-minute polls showed
+    # them flicking to unknown. Hold the last value for FIELD_HOLD_POLLS polls.
+    from custom_components.suzuki_connect.coordinator import FIELD_HOLD_POLLS
+
+    backend = patch_session
+    entry = _entry()
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    assert hass.states.get("binary_sensor.e_vitara_doors_lock").state == "off"  # locked
+
+    gappy = load_fixture("dashboard.json")
+    ud = gappy["result"]["data"]["DASHBOARD_DATA"]["user_data"]
+    del ud["doorlock_st"]
+    ud["currentChargeLevel"] = ""
+    backend.session.route(
+        "POST", api.EP_DASHBOARD,
+        lambda call: (200, gappy) if backend.authorised(call) else (401, {}),
+    )
+    freezer.tick(60)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.e_vitara_doors_lock").state == "off"
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
+    diag = (await async_get_config_entry_diagnostics(hass, entry))["vehicles"][0]
+    assert diag["held_fields"] == ["currentChargeLevel", "doorlock_st"]
+    assert diag["field_gaps"]["doorlock_st"] == {"missing": 1, "longest_run": 1}
+
+    for _ in range(FIELD_HOLD_POLLS - 1):  # still within the hold
+        await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.e_vitara_doors_lock").state == "off"
+
+    await coordinator.async_refresh()  # one poll more than the hold -> unknown
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.e_vitara_doors_lock").state == "unknown"
+    diag = (await async_get_config_entry_diagnostics(hass, entry))["vehicles"][0]
+    assert diag["field_gaps"]["doorlock_st"]["longest_run"] == FIELD_HOLD_POLLS + 1
+
+
+async def test_field_hold_resets_when_field_returns(hass, patch_session, freezer):
+    from custom_components.suzuki_connect.coordinator import FIELD_HOLD_POLLS
+
+    backend = patch_session
+    entry = _entry()
+    await _setup(hass, entry)
+    full = load_fixture("dashboard.json")
+    gappy = load_fixture("dashboard.json")
+    del gappy["result"]["data"]["DASHBOARD_DATA"]["user_data"]["doorlock_st"]
+    for payload in [gappy] * FIELD_HOLD_POLLS + [full] + [gappy] * FIELD_HOLD_POLLS:
+        backend.session.route(
+            "POST", api.EP_DASHBOARD,
+            lambda call, p=payload: (200, p) if backend.authorised(call) else (401, {}),
+        )
+        await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.e_vitara_doors_lock").state == "off"
+
+
+async def test_whole_user_data_missing_is_held(hass, patch_session, freezer):
+    backend = patch_session
+    entry = _entry()
+    await _setup(hass, entry)
+    empty = load_fixture("dashboard.json")
+    empty["result"]["data"]["DASHBOARD_DATA"]["user_data"] = None
+    backend.session.route(
+        "POST", api.EP_DASHBOARD,
+        lambda call: (200, empty) if backend.authorised(call) else (401, {}),
+    )
+    freezer.tick(60)
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
+
+
+async def test_charger_connected_is_never_held(hass, patch_session, freezer):
+    # chargerConnected_st is only sent while plugged in: its absence is real.
+    backend = patch_session
+    plugged = load_fixture("dashboard_plugged_in_not_charging.json")
+    backend.session.route(
+        "POST", api.EP_DASHBOARD,
+        lambda call: (200, plugged) if backend.authorised(call) else (401, {}),
+    )
+    entry = _entry()
+    await _setup(hass, entry)
+    assert hass.states.get("binary_sensor.e_vitara_charging_cable_connected").state == "on"
+    unplugged = load_fixture("dashboard.json")  # no chargerConnected_st
+    backend.session.route(
+        "POST", api.EP_DASHBOARD,
+        lambda call: (200, unplugged) if backend.authorised(call) else (401, {}),
+    )
+    freezer.tick(60)
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.e_vitara_charging_cable_connected").state == "unknown"

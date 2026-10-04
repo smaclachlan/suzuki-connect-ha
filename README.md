@@ -262,6 +262,12 @@ Two different clocks, which can be hours apart:
 the car is parked and *not* charging; while charging it grows even though the
 values are current, so don't use it to gate automations.
 
+Suzuki sometimes leaves fields out of a response (or sends them blank). So
+that sensors don't flicker to *unknown*, a missing value keeps its last
+reading for up to 3 polls in a row (3 minutes at a 1-minute interval); after
+that it shows unknown.
+(*Charging cable connected* is the exception: Suzuki omits it when unplugged.)
+
 Polling reads Suzuki's cloud and doesn't appear to wake the car. While the car
 is awake (driving or charging) it reports about once a minute, so a short poll
 interval catches short trips and charging progress; while it's asleep, polling

@@ -52,6 +52,13 @@ _LOGGER = logging.getLogger(__name__)
 TOKEN_SAVE_DELAY = 10
 # Months of trips the calendar may fetch in one request (e.g. a year view).
 MAX_TRIP_MONTHS_PER_REQUEST = 12
+# Live fields missing or blank in a response keep their last value for up to
+# this many consecutive polls (Suzuki intermittently drops fields, so 1-minute
+# polls flickered to unknown), then go unknown. Counted in polls, not time, so
+# the hold scales with the poll interval.
+FIELD_HOLD_POLLS = 3
+# Fields whose absence is meaningful, so never held.
+NEVER_HELD = frozenset({"chargerConnected_st"})
 
 
 def _months_between(start: datetime, end: datetime) -> list[str]:
@@ -153,6 +160,12 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         # Charging sessions seen so far, per car, keyed by start time. The
         # history endpoint returns only the latest few, so this builds up.
         self._charge_log: dict[int, dict[datetime, ChargeSession]] = {}
+        # Per car: live field -> [last value, consecutive polls missing].
+        self._fields: dict[int, dict[str, list]] = {}
+        # Per car, for diagnostics: fields currently held, and per field how
+        # often it has been missing since startup and its longest run.
+        self.held_fields: dict[int, list[str]] = {}
+        self.field_gaps: dict[int, dict[str, dict[str, int]]] = {}
         slow_minutes = entry.options.get(CONF_SLOW_INTERVAL_MINUTES)
         self._slow_interval = (
             timedelta(minutes=slow_minutes) if slow_minutes else DEFAULT_SLOW_INTERVAL
@@ -211,7 +224,9 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
             for position, vehicle in enumerate(selected, start=1):
                 cid = vehicle.contract_id
                 try:
-                    status = await self.client.async_get_status(cid)
+                    status = self._hold_missing_fields(
+                        cid, await self.client.async_get_status(cid)
+                    )
                 except SuzukiApiError as err:
                     # One car failing (e.g. telematics unreachable) shouldn't
                     # blank the others; keep its last snapshot if we have one.
@@ -246,6 +261,32 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self.last_error = "; ".join(failures) if failures else None
         self.consecutive_failures = 0
         return SuzukiData(vehicles=result)
+
+    def _hold_missing_fields(self, cid: int, status: VehicleStatus) -> VehicleStatus:
+        """Fill fields missing or blank in this response from recent polls."""
+        seen = self._fields.setdefault(cid, {})
+        gaps = self.field_gaps.setdefault(cid, {})
+        received = {k: v for k, v in status.raw.items() if v not in (None, "")}
+        for key, value in received.items():
+            seen[key] = [value, 0]
+        held = {}
+        for key, entry in list(seen.items()):
+            if key in received or key in NEVER_HELD:
+                continue
+            entry[1] += 1
+            gap = gaps.setdefault(key, {"missing": 0, "longest_run": 0})
+            gap["missing"] += 1
+            gap["longest_run"] = max(gap["longest_run"], entry[1])
+            if entry[1] <= FIELD_HOLD_POLLS:
+                held[key] = entry[0]
+            else:
+                del seen[key]
+        self.held_fields[cid] = sorted(held)
+        if not held:
+            return status
+        return VehicleStatus.from_dashboard(
+            {**status.raw_meta, "user_data": {**status.raw, **held}}
+        )
 
     async def _get_vehicle_list(self) -> list[Vehicle]:
         """The account's vehicles, fetched at startup and then on the slow

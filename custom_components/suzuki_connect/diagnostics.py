@@ -137,6 +137,10 @@ def _vehicle_diagnostics(coordinator, contract_id: int, vdata) -> dict[str, Any]
     age = coordinator.telemetry_age(contract_id)
     settings = coordinator.settings_for(contract_id)
     return {
+        # Live fields missing/blank in the latest response and filled from a
+        # recent one, and how often each has been missing since startup.
+        "held_fields": coordinator.held_fields.get(contract_id, []),
+        "field_gaps": coordinator.field_gaps.get(contract_id, {}),
         "telemetry": {
             # Exactly as Suzuki sent it, to check its timezone and format.
             "lut_raw": vdata.status.raw_meta.get("lut"),
