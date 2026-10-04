@@ -60,6 +60,8 @@ def test_parse_dashboard_status():
     assert s.average_consumption == 0.2
     assert s.last_updated is not None
     assert s.last_updated.year == 2026 and s.last_updated.hour == 18
+    # lut is UTC (confirmed live), so it's returned timezone-aware.
+    assert s.last_updated.tzinfo == timezone.utc
 
 
 def test_absent_fields_are_unknown_not_false():
@@ -245,3 +247,13 @@ if __name__ == "__main__":
     test_parse_dashboard_status()
     test_absent_fields_are_unknown_not_false()
     print("all model tests passed")
+
+
+def test_charging_without_charger_field_counts_as_connected():
+    # Seen live: charge_st=1 with no chargerConnected_st at all.
+    s = VehicleStatus.from_dashboard({"user_data": {"charge_st": 1}})
+    assert s.is_charging is True
+    assert s.charger_connected is True
+    # Not charging and no field: still unknown, not "unplugged".
+    s = VehicleStatus.from_dashboard({"user_data": {"charge_st": 0}})
+    assert s.charger_connected is None

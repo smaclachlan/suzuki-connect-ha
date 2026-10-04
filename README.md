@@ -123,30 +123,29 @@ There are two separate clocks, and they can be hours apart:
 
 - **Last polled** — when Home Assistant last fetched data from Suzuki's cloud
   successfully. This follows the poll interval (default 15 minutes).
-- **Last reported by car** — when the car itself last sent data to the cloud.
-  The car reports while it's awake; when it's parked and asleep, or out of
-  mobile coverage, the cloud keeps serving the last values it has.
+- **Last reported by car** — Suzuki's `lut` timestamp: the car's last
+  trip/park report (in practice, a few minutes after the ignition goes off).
+  It does **not** move while the car is parked and charging, even though the
+  battery level, range and charging time keep updating.
 
 > [!NOTE]
 > The Suzuki app's "Last updated" is **not** the car's report time: the app
-> shows the moment it fetched the data (its code ignores the car's timestamp).
-> It matches *Last polled*, not *Last reported by car*, so the app can say "a
-> minute ago" while the car's data is hours old. *Last reported by car* is
-> Suzuki's `lut` timestamp; its timezone and how often it changes are still
-> being confirmed (diagnostics include the raw value as `lut_raw`).
+> shows the moment it fetched the data (its code ignores `lut`). It matches
+> *Last polled*, so the app can say "a minute ago" while *Last reported by car*
+> says hours.
 
-**Telemetry age** (a diagnostic sensor) is the difference at the last poll.
-A recent *Last polled* with a large *Telemetry age* means polling is working
-but the car hasn't reported. The values are not current, even though they
-updated.
+**Telemetry age** (a diagnostic sensor) is *Last polled* minus *Last reported by
+car*. It's a good sign of stale data when the car is parked and **not**
+charging; while it's charging it grows even though the charging values are
+current.
 
 Polling reads the cloud's cached data and does not appear to wake the car.
 While the car is awake (driving or charging) it reports about once a minute, so
 a short poll interval catches short trips and charging progress that a
 15-minute poll misses. While it's asleep, polling more often changes nothing.
 
-For automations that act on state of charge, check freshness first, for
-example `{{ states('sensor.e_vitara_telemetry_age') | float(9999) < 60 }}`.
+For automations, *Battery level* becoming unavailable already covers failed
+polls. Don't gate on *Telemetry age* while charging, for the reason above.
 
 ## Options
 
@@ -203,13 +202,11 @@ triggers:
     entity_id: binary_sensor.e_vitara_charging_cable_connected
     to: "on"
 conditions:
+  # Unavailable (a failed poll) or unknown isn't a number, so it's skipped.
+  # No telemetry-age check: it keeps growing while the car charges.
   - condition: template
     value_template: >
       {{ states('sensor.e_vitara_battery_level') | is_number }}
-  # Only send reasonably fresh data from the car.
-  - condition: template
-    value_template: >
-      {{ states('sensor.e_vitara_telemetry_age') | float(9999) < 30 }}
 actions:
   - action: number.set_value
     target:
@@ -263,21 +260,19 @@ locations redacted) shows what Suzuki returned for each car.
   implemented.
 - **Data is only as fresh as the car's last report.** See
   [Polling vs. how fresh the car's data is](#polling-vs-how-fresh-the-cars-data-is).
-- **Timestamps** from the car have no timezone. They are assumed to be in Home
-  Assistant's configured timezone.
+- **Timestamps.** *Last reported by car* (`lut`) is UTC. Trip and charging
+  times are local time without a zone and are read in Home Assistant's
+  timezone, so set that to the car's timezone.
 - **Unconfirmed values.** These have been seen only in some states, or not at
   all on a live car, and may be wrong:
-  - `charge_st` while charging (the integration treats any non-zero value as
-    charging).
-  - `chargerConnected_st`: only sent while plugged in. When it's missing,
-    *Charging cable connected* shows unknown rather than off.
+  - `chargerConnected_st`: often missing, even while charging. While the car
+    is charging, *Charging cable connected* shows on; otherwise, when it's
+    missing, unknown rather than off.
   - The meaning of the vehicle-health status codes.
 - **Trip meter** is the car's `drv_km` value, assumed to be its resettable trip
   distance in km. Not yet confirmed.
-- **Extended data** (trips, charging history, schedules, subscription) is
-  parsed from formats found in the app's code, not yet checked against a live
-  response. Energy in *Charging last session* has no unit in the API and is
-  assumed kWh.
+- **Extended data**: trips and charging history have been checked against a
+  live account; charge and climate schedules only with schedules switched off.
   In accounts with several cars, trips are matched to cars by contract id;
   see [Multiple cars](#multiple-cars).
 - **Not exposed yet:** geofences, alert settings and alert history. Endpoints

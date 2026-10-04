@@ -290,7 +290,8 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         return max(timedelta(0), self.last_polled - reported)
 
     async def _maybe_fetch_extended(self, contract_ids: list[int]) -> None:
-        """Fetch trips, charging history, schedules and subscription when opted
+        """Fetch trips, charging history and schedules (and read the
+        subscription from the vehicle list) when opted
         in, at most once per slow interval.
 
         Each part is fetched independently: a failure (e.g. an endpoint the
@@ -320,6 +321,12 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         history = await self._fetch_trips(fetch)
         for cid in contract_ids:
             ext = self._extended.setdefault(cid, ExtendedData())
+            # Already in the vehicle list; the subscription endpoint itself
+            # returned nothing on a live account.
+            if (vehicle := self.vehicles.get(cid)) is not None:
+                ext.subscription = Subscription.from_details(
+                    vehicle.raw.get("subscriptionDetails")
+                )
             if history is not None:
                 ext.driving = history
                 ext.trips = history.for_contract(cid, only_vehicle=len(contract_ids) == 1)
@@ -327,7 +334,6 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
                 ("charging", "charging history", self.client.async_get_charging_history),
                 ("charge_schedules", "charge schedules", self.client.async_get_charge_schedules),
                 ("climate_schedules", "climate schedules", self.client.async_get_climate_schedules),
-                ("subscription", "subscription", self.client.async_get_subscription),
             ):
                 value = await fetch(label, call(cid))
                 if value is not None:

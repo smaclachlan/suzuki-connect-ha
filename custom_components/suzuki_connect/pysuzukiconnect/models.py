@@ -9,20 +9,22 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, tzinfo
+from datetime import datetime, timezone, tzinfo
 from typing import Any, Optional
 
 
+_LEADING_NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?")
+
+
 def _num(value: Any) -> Optional[float]:
-    """Parse a number that may arrive as a string with thousands separators."""
-    if value is None or value == "":
+    """Parse a number that may arrive as a string with thousands separators
+    and a trailing unit (``"14,066.6"``, ``"7 kWh"``, ``"43%"``)."""
+    if value is None or value == "" or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    try:
-        return float(str(value).replace(",", "").strip())
-    except (ValueError, TypeError):
-        return None
+    match = _LEADING_NUMBER.match(str(value).replace(",", "").strip())
+    return float(match.group()) if match else None
 
 
 def _int(value: Any) -> Optional[int]:
@@ -59,7 +61,8 @@ def parse_timestamp(value: Any) -> Optional[datetime]:
         return None
     text = str(value).strip()
     for fmt in (
-        "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M %p",
+        "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M",
+        "%Y-%m-%d %I:%M %p",
     ):
         try:
             return datetime.strptime(text, fmt)
@@ -187,17 +190,26 @@ class VehicleStatus:
             if remaining_ms is not None and remaining_ms >= 0 else None
         )
 
-        last_updated = parse_timestamp(dashboard_data.get("lut"))
+        # lut is UTC (confirmed live: it matched the trip id's UTC start time
+        # and a "...Z" timestamp, an hour off the trips' local times in BST).
+        # It marks the car's last trip/park report and does not advance while
+        # charging.
+        last_updated = localize(parse_timestamp(dashboard_data.get("lut")), timezone.utc)
 
+        is_charging = _bool_int(ud.get("charge_st"))
+        # chargerConnected_st is often absent, even mid-charge (seen live with
+        # charge_st=1), so a charging car counts as plugged in.
         charger_connected = _bool_yn(ud.get("chargerConnected_st")) \
             if "chargerConnected_st" in ud else None
+        if charger_connected is None and is_charging:
+            charger_connected = True
 
         return cls(
             state_of_charge=_int(ud.get("currentChargeLevel")),
             range=_num(ud.get("driving_range")),
             range_unit=ud.get("driving_range_unit"),
             charge_status_raw=_int(ud.get("charge_st")),
-            is_charging=_bool_int(ud.get("charge_st")),
+            is_charging=is_charging,
             charger_connected=charger_connected,
             remaining_charge_minutes=remaining,
             battery_preconditioning=_bool_int(ud.get("batteryPreconditioning_st")),
@@ -554,7 +566,10 @@ class Schedules:
 
 @dataclass
 class Subscription:
-    """``GET /api/subscription/getStatus/{contractId}``."""
+    """Connected-services plan. ``subscriptionDetails`` is in the vehicle
+    list and dashboard (``from_details``) as well as its own endpoint
+    (``GET /api/subscription/getStatus/{contractId}``), which returned nothing
+    on a live account."""
 
     plan_name: Optional[str] = None
     plan_id: Optional[str] = None
@@ -564,11 +579,16 @@ class Subscription:
     @classmethod
     def from_response(cls, payload: Any) -> "Subscription":
         data = _result_data(payload)
-        details = data.get("subscriptionDetails")
+        sub = cls.from_details(data.get("subscriptionDetails"))
+        sub.raw = data
+        return sub
+
+    @classmethod
+    def from_details(cls, details: Any) -> "Subscription":
         details = details if isinstance(details, dict) else {}
         return cls(
             plan_name=_str(details.get("planName")),
             plan_id=_str(details.get("planId")),
             status=_int(details.get("subscriptionStatus")),
-            raw=data,
+            raw=details,
         )

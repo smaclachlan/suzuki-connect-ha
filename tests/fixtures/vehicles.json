@@ -18,7 +18,17 @@
             "VEHICLE_MODEL_CODE": "YY831C1HP02_WB3",
             "ODOMETER_READING": "14,062.9",
             "ODOMETER_READING_UNIT": "miles",
-            "COUNTRY_ID": "GB"
+            "COUNTRY_ID": "GB",
+            "MOBILE_NO": 7700900123,
+            "INVITED_UNIQUE_ID": 12345,
+            "VEHICLE_IMAGE": "https://example.invalid/car.png?X-Amz-Credential=abc&X-Amz-Signature=def",
+            "subscriptionDetails": {
+              "planId": "evitara2025_a_foc",
+              "planName": "Suzuki Connect Plus",
+              "subscriptionStatus": 1,
+              "focStatus": 0,
+              "foc_error_msg": null
+            }
           }
         ],
         "selectedContractId": 999999
