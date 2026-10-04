@@ -235,11 +235,30 @@ async def test_refresh_token_persisted(hass, hass_storage, patch_session, freeze
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert hass_storage[storage_key(entry.entry_id)]["data"] == {
-        "refresh_token": coordinator.client.auth.refresh_token
+        "refresh_token": coordinator.client.auth.refresh_token,
+        "access_token": coordinator.client.auth.last_access_token,
     }
 
 
 async def test_restored_refresh_token_means_no_login(hass, hass_storage, patch_session):
+    backend = patch_session
+    backend.valid_refresh.add("saved-refresh")
+    backend.issued_access.add("saved-access")  # expired, but was issued
+    entry = _entry()
+    hass_storage[storage_key(entry.entry_id)] = {
+        "version": 1,
+        "key": storage_key(entry.entry_id),
+        "data": {"refresh_token": "saved-refresh", "access_token": "saved-access"},
+    }
+    await _setup(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
+    assert backend.logins == []      # the owner's phone was not logged out
+    assert backend.refreshes == 1
+
+
+async def test_legacy_store_without_access_token(hass, hass_storage, patch_session):
+    # Stores written before the access token was saved: the refresh can't
+    # succeed, so there's one forced login, and the store is then complete.
     backend = patch_session
     backend.valid_refresh.add("saved-refresh")
     entry = _entry()
@@ -250,8 +269,7 @@ async def test_restored_refresh_token_means_no_login(hass, hass_storage, patch_s
     }
     await _setup(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
-    assert backend.logins == []      # the owner's phone was not logged out
-    assert backend.refreshes == 1
+    assert backend.logins == ["1"]
 
 
 async def test_remove_entry_deletes_token_store(hass, hass_storage, patch_session):
@@ -273,7 +291,8 @@ async def test_unload_flushes_pending_token_save(hass, hass_storage, patch_sessi
     assert storage_key(entry.entry_id) not in hass_storage  # still pending
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    assert hass_storage[storage_key(entry.entry_id)]["data"] == {"refresh_token": token}
+    data = hass_storage[storage_key(entry.entry_id)]["data"]
+    assert data["refresh_token"] == token and data["access_token"]
 
 
 async def test_remove_entry_with_pending_save_leaves_no_token(
