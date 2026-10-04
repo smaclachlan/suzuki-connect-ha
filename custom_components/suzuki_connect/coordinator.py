@@ -52,10 +52,11 @@ _LOGGER = logging.getLogger(__name__)
 TOKEN_SAVE_DELAY = 10
 # Months of trips the calendar may fetch in one request (e.g. a year view).
 MAX_TRIP_MONTHS_PER_REQUEST = 12
-# Live fields missing or blank in one response keep their last value this
-# long (Suzuki intermittently drops fields, so 1-minute polls flickered to
-# unknown), then go unknown.
-FIELD_HOLD = timedelta(minutes=15)
+# Live fields missing or blank in a response keep their last value for up to
+# this many consecutive polls (Suzuki intermittently drops fields, so 1-minute
+# polls flickered to unknown), then go unknown. Counted in polls, not time, so
+# the hold scales with the poll interval.
+FIELD_HOLD_POLLS = 3
 # Fields whose absence is meaningful, so never held.
 NEVER_HELD = frozenset({"chargerConnected_st"})
 
@@ -159,12 +160,12 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         # Charging sessions seen so far, per car, keyed by start time. The
         # history endpoint returns only the latest few, so this builds up.
         self._charge_log: dict[int, dict[datetime, ChargeSession]] = {}
-        # Per car: live field -> (value, monotonic time last received).
-        self._fields: dict[int, dict[str, tuple[object, float]]] = {}
-        # Per car, for diagnostics: fields currently held, and how often each
-        # field has been missing from a response since startup.
+        # Per car: live field -> [last value, consecutive polls missing].
+        self._fields: dict[int, dict[str, list]] = {}
+        # Per car, for diagnostics: fields currently held, and per field how
+        # often it has been missing since startup and its longest run.
         self.held_fields: dict[int, list[str]] = {}
-        self.field_gaps: dict[int, dict[str, int]] = {}
+        self.field_gaps: dict[int, dict[str, dict[str, int]]] = {}
         slow_minutes = entry.options.get(CONF_SLOW_INTERVAL_MINUTES)
         self._slow_interval = (
             timedelta(minutes=slow_minutes) if slow_minutes else DEFAULT_SLOW_INTERVAL
@@ -262,20 +263,22 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         return SuzukiData(vehicles=result)
 
     def _hold_missing_fields(self, cid: int, status: VehicleStatus) -> VehicleStatus:
-        """Fill fields missing or blank in this response from recent ones."""
-        now = time.monotonic()
+        """Fill fields missing or blank in this response from recent polls."""
         seen = self._fields.setdefault(cid, {})
         gaps = self.field_gaps.setdefault(cid, {})
         received = {k: v for k, v in status.raw.items() if v not in (None, "")}
         for key, value in received.items():
-            seen[key] = (value, now)
+            seen[key] = [value, 0]
         held = {}
-        for key, (value, at) in list(seen.items()):
+        for key, entry in list(seen.items()):
             if key in received or key in NEVER_HELD:
                 continue
-            gaps[key] = gaps.get(key, 0) + 1
-            if now - at <= FIELD_HOLD.total_seconds():
-                held[key] = value
+            entry[1] += 1
+            gap = gaps.setdefault(key, {"missing": 0, "longest_run": 0})
+            gap["missing"] += 1
+            gap["longest_run"] = max(gap["longest_run"], entry[1])
+            if entry[1] <= FIELD_HOLD_POLLS:
+                held[key] = entry[0]
             else:
                 del seen[key]
         self.held_fields[cid] = sorted(held)
