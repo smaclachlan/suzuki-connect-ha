@@ -520,3 +520,16 @@ async def test_entity_sections(hass, patch_session):
     category = lambda eid: registry.async_get(eid).entity_category  # noqa: E731
     assert category("binary_sensor.e_vitara_doors") is None              # main sensors
     assert category("sensor.e_vitara_last_reported_by_car") is not None  # diagnostic
+
+
+async def test_diagnostics_show_raw_timestamp_and_zone(hass, patch_session):
+    entry = _entry()
+    await _setup(hass, entry)
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag["ha_time_zone"] == hass.config.time_zone
+    vehicle = diag["vehicles"][0]
+    assert vehicle["telemetry"]["lut_raw"] == "2026-10-02 18:54:37"
+    dashboard = vehicle["dashboard"]
+    assert dashboard["lut"] == "2026-10-02 18:54:37"
+    assert "user_data" not in dashboard
+    assert "999999" not in json.dumps(dashboard)  # selectedContractId redacted

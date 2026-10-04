@@ -172,6 +172,8 @@ class VehicleStatus:
     average_consumption_unit: Optional[str] = None
     last_updated: Optional[datetime] = None
     raw: dict = field(default_factory=dict, repr=False)
+    # DASHBOARD_DATA minus user_data: lut, timezone fields etc. (diagnostics).
+    raw_meta: dict = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_dashboard(cls, dashboard_data: dict) -> "VehicleStatus":
@@ -230,6 +232,7 @@ class VehicleStatus:
             average_consumption_unit=ud.get("averageConsumptionUnit"),
             last_updated=last_updated,
             raw=ud,
+            raw_meta={k: v for k, v in dashboard_data.items() if k != "user_data"},
         )
 
 

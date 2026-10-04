@@ -127,6 +127,14 @@ There are two separate clocks, and they can be hours apart:
   The car reports while it's awake; when it's parked and asleep, or out of
   mobile coverage, the cloud keeps serving the last values it has.
 
+> [!NOTE]
+> The Suzuki app's "Last updated" is **not** the car's report time: the app
+> shows the moment it fetched the data (its code ignores the car's timestamp).
+> It matches *Last polled*, not *Last reported by car*, so the app can say "a
+> minute ago" while the car's data is hours old. *Last reported by car* is
+> Suzuki's `lut` timestamp; its timezone and how often it changes are still
+> being confirmed (diagnostics include the raw value as `lut_raw`).
+
 **Telemetry age** (a diagnostic sensor) is the difference at the last poll.
 A recent *Last polled* with a large *Telemetry age* means polling is working
 but the car hasn't reported. The values are not current, even though they
