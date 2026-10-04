@@ -406,6 +406,8 @@ class SuzukiHealthSensor(SuzukiConnectEntity, SensorEntity):
 
     _attr_translation_key = "vehicle_health"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Suzuki has only ever returned an empty health list (live, e Vitara).
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator, contract_id: int) -> None:
         super().__init__(coordinator, contract_id, "vehicle_health")

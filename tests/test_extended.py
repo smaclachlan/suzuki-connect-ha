@@ -109,6 +109,15 @@ def test_charging_history_live_formats():
         assert secret not in repr(c)
 
 
+def test_charging_history_plug_state():
+    payload = load_fixture("charging_history.json")
+    assert ChargingHistory.from_response(payload).charger_connected is None
+    payload["result"]["data"]["chargerConnectedStatus"] = 1
+    assert ChargingHistory.from_response(payload).charger_connected is True
+    payload["result"]["data"]["chargerConnectedStatus"] = 0
+    assert ChargingHistory.from_response(payload).charger_connected is False
+
+
 def test_charge_schedules():
     s = Schedules.charge_from_response(load_fixture("charge_schedules.json"))
     assert [i.active for i in s.items] == [True, False]
