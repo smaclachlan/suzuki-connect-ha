@@ -235,13 +235,24 @@ const CARDS = [
     "Your car's recent charging sessions: charge added, energy, duration and type."],
 ];
 
-if (!customElements.get("suzuki-history-card-editor")) {
-  customElements.define("suzuki-history-card-editor", SuzukiHistoryCardEditor);
-}
-window.customCards = window.customCards || [];
-for (const [tag, cls, name, description] of CARDS) {
-  if (!customElements.get(tag)) customElements.define(tag, cls);
-  if (!window.customCards.some((card) => card.type === tag)) {
-    window.customCards.push({ type: tag, name, description, preview: true, documentationURL: DOCS });
+function register() {
+  // Look the registry up now, not at load: see below.
+  const registry = window.customElements;
+  if (!registry.get("suzuki-history-card-editor")) {
+    registry.define("suzuki-history-card-editor", SuzukiHistoryCardEditor);
+  }
+  window.customCards = window.customCards || [];
+  for (const [tag, cls, name, description] of CARDS) {
+    if (!registry.get(tag)) registry.define(tag, cls);
+    if (!window.customCards.some((card) => card.type === tag)) {
+      window.customCards.push({ type: tag, name, description, preview: true, documentationURL: DOCS });
+    }
   }
 }
+
+// HA imports this module in parallel with its own app, whose first import is
+// a scoped-custom-element-registry polyfill (used by Firefox) that replaces
+// window.customElements. This small file can run first, and anything defined
+// before the swap is invisible to HA ("Custom element not found"). HA defines
+// <home-assistant> after the polyfill is in place, so register then.
+window.customElements.whenDefined("home-assistant").then(register);
