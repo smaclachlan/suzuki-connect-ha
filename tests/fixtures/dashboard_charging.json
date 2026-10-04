@@ -34,7 +34,7 @@
           "batteryPreconditioning_st": 0,
           "averageConsumption": 0.2,
           "averageConsumptionUnit": "miles/kWh",
-          "remainingChargingTime": "95",
+          "remainingChargingTime": "5700000",
           "charge_st": 1,
           "currentChargeLevel": 62,
           "doorLockPending": "N",
