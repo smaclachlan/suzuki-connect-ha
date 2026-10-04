@@ -38,8 +38,9 @@ OVERRIDE_OFF = "0"
 OVERRIDE_FORCE = "1"  # evicts the currently-logged-in device
 # Minimum seconds between forced (override) logins. If the phone app reclaims
 # the session again within this window we fail the poll instead of evicting it
-# again, so the two devices can't ping-pong. Matches the minimum poll interval,
-# so steady-state polling gets at most one forced login per cycle.
+# again, so the two devices can't ping-pong. Independent of the poll interval:
+# with fast polling, polls simply fail (data goes stale, no reauth) until the
+# cooldown ends, so the phone is evicted at most once per cooldown.
 FORCED_LOGIN_COOLDOWN = 300.0
 # Per-request timeout (seconds). Home Assistant's shared session has none, so
 # without this aiohttp's 5-minute default could stall a whole poll cycle.

@@ -92,7 +92,8 @@ To keep this to a minimum, the integration:
 - **Reclaims a lost session at most once every 5 minutes.** If the app keeps
   taking the session back, Home Assistant skips polls instead of the two
   logging each other out in a loop. Skipped polls show as unavailable data,
-  not as a request to re-enter your password.
+  not as a request to re-enter your password. With a short poll interval this
+  means up to 5 minutes of unavailable data each time the app takes over.
 
 **Recommended:** use a dedicated account for Home Assistant. In the Suzuki
 app, invite a second email address as a secondary driver, accept the
@@ -114,8 +115,10 @@ A recent *Last polled* with a large *Telemetry age* means polling is working
 but the car hasn't reported. The values are not current, even though they
 updated.
 
-Polling reads the cloud's cached data and does not appear to wake the car, so
-polling more often won't make the data fresher.
+Polling reads the cloud's cached data and does not appear to wake the car.
+While the car is awake (driving or charging) it reports about once a minute, so
+a short poll interval catches short trips and charging progress that a
+15-minute poll misses. While it's asleep, polling more often changes nothing.
 
 For automations that act on state of charge, check freshness first, for
 example `{{ states('sensor.e_vitara_telemetry_age') | float(9999) < 60 }}`.
@@ -124,12 +127,19 @@ example `{{ states('sensor.e_vitara_telemetry_age') | float(9999) < 60 }}`.
 
 Settings → the integration → **Configure**:
 
-- **Poll interval** — default 15 minutes, allowed 5–240.
+- **Live data poll interval** — default 15 minutes, 1–240. This covers the
+  live status (charge, range, locks, location, trip meter). 1–2 minutes
+  roughly matches how often the car reports while driving and how often the
+  Suzuki app refreshes. Each poll is two API calls per account plus one per
+  car; Suzuki doesn't publish rate limits, so if polls start failing at a short
+  interval, raise it.
 - **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
   fetched at most hourly (one extra API call per vehicle).
 - **Fetch trips, charging history, schedules and subscription** — off by
-  default. Adds the extended-data entities, refreshed at most every 6 hours
-  (two calls for the account plus four per vehicle). Each part is fetched
+  default. Adds the extended-data entities, refreshed on their own interval
+  (two calls for the account plus four per vehicle).
+- **Trips, charging history and schedules refresh interval** — default 6 hours,
+  30 minutes to 24 hours. Only used when the option above is on. Each part is fetched
   separately; one that fails keeps its last value and never fails the poll.
   - *Last trip distance* has the trip's start, end, duration and average
     consumption as attributes; *Distance this month* has the trip count and

@@ -43,9 +43,10 @@
       "init": {
         "title": "Suzuki Connect options",
         "data": {
-          "scan_interval_minutes": "Poll interval (minutes)",
+          "scan_interval_minutes": "Live data poll interval",
           "enable_health": "Fetch vehicle health (extra API call, hourly)",
-          "enable_extended": "Fetch trips, charging history, schedules and subscription (several extra API calls, every 6 hours)"
+          "enable_extended": "Fetch trips, charging history, schedules and subscription (several extra API calls per refresh)",
+          "extended_interval_minutes": "Trips, charging history and schedules refresh interval"
         }
       }
     }

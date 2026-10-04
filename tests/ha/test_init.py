@@ -18,8 +18,10 @@ from custom_components.suzuki_connect.const import (
     CONF_ENABLE_EXTENDED,
     CONF_CONTRACT_IDS,
     CONF_DEVICE_ID,
+    CONF_EXTENDED_INTERVAL_MINUTES,
+    CONF_SCAN_INTERVAL_MINUTES,
+    DEFAULT_EXTENDED_INTERVAL,
     DOMAIN,
-    EXTENDED_REFRESH,
 )
 from custom_components.suzuki_connect.coordinator import TOKEN_SAVE_DELAY, storage_key
 from custom_components.suzuki_connect.pysuzukiconnect import const as api
@@ -330,11 +332,11 @@ def _extended_routes(backend) -> None:
     route("GET", api.EP_SUBSCRIPTION.format(contract_id=999999), ok("subscription.json"))
 
 
-def _extended_entry() -> MockConfigEntry:
+def _extended_entry(**options) -> MockConfigEntry:
     entry = _entry()
     return MockConfigEntry(
         domain=DOMAIN, title=entry.title, unique_id=EMAIL, version=1, minor_version=2,
-        data=dict(entry.data), options={CONF_ENABLE_EXTENDED: True},
+        data=dict(entry.data), options={CONF_ENABLE_EXTENDED: True, **options},
     )
 
 
@@ -394,11 +396,11 @@ async def test_extended_data_is_fetched_rarely(hass, patch_session, freezer):
     assert calls() == 1
 
     await coordinator.async_refresh()
-    assert calls() == 1  # within EXTENDED_REFRESH: not fetched again
+    assert calls() == 1  # within the extended interval: not fetched again
     # Values from the earlier fetch are still there.
     assert hass.states.get("sensor.e_vitara_subscription").state == "Suzuki Connect Plus"
 
-    freezer.tick(EXTENDED_REFRESH)
+    freezer.tick(DEFAULT_EXTENDED_INTERVAL)
     await coordinator.async_refresh()
     assert calls() == 2
 
@@ -427,3 +429,23 @@ async def test_extended_diagnostics_are_redacted(hass, patch_session, freezer):
     for secret in ("51.5", "-0.12", "Test Driver", "999999", "Services"):
         assert secret not in dumped, secret
     assert "tripDistance" in dumped  # shapes are still visible for mapping
+
+
+async def test_poll_intervals_from_options(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    entry = _extended_entry(
+        **{CONF_SCAN_INTERVAL_MINUTES: 1, CONF_EXTENDED_INTERVAL_MINUTES: 30}
+    )
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    assert coordinator.update_interval.total_seconds() == 60
+
+    calls = lambda: len(patch_session.session.calls_to(api.EP_CHARGING_HISTORY))  # noqa: E731
+    assert calls() == 1
+    freezer.tick(29 * 60)
+    await coordinator.async_refresh()
+    assert calls() == 1
+    freezer.tick(60)
+    await coordinator.async_refresh()
+    assert calls() == 2

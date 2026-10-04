@@ -16,6 +16,11 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .pysuzukiconnect import (
@@ -32,12 +37,16 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
     CONF_ENABLE_EXTENDED,
+    CONF_EXTENDED_INTERVAL_MINUTES,
     CONF_ENABLE_HEALTH,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_EXTENDED_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    MAX_EXTENDED_INTERVAL_MINUTES,
     MAX_SCAN_INTERVAL_MINUTES,
+    MIN_EXTENDED_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
 )
 
@@ -188,8 +197,26 @@ class SuzukiConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         return SuzukiConnectOptionsFlow()
 
 
+def _minutes_slider(minimum: int, maximum: int, step: int) -> vol.All:
+    """A minutes slider whose value is stored as an int (selectors give floats)."""
+    return vol.All(
+        NumberSelector(
+            NumberSelectorConfig(
+                min=minimum, max=maximum, step=step,
+                mode=NumberSelectorMode.SLIDER, unit_of_measurement="min",
+            )
+        ),
+        vol.Coerce(int),
+        vol.Range(min=minimum, max=maximum),
+    )
+
+
+def _minutes(interval) -> int:
+    return int(interval.total_seconds() // 60)
+
+
 class SuzukiConnectOptionsFlow(OptionsFlow):
-    """Let the user tune the poll interval."""
+    """Poll intervals and opt-in data."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -203,15 +230,9 @@ class SuzukiConnectOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_SCAN_INTERVAL_MINUTES,
                     default=options.get(
-                        CONF_SCAN_INTERVAL_MINUTES,
-                        int(DEFAULT_SCAN_INTERVAL.total_seconds() // 60),
+                        CONF_SCAN_INTERVAL_MINUTES, _minutes(DEFAULT_SCAN_INTERVAL)
                     ),
-                ): vol.All(
-                    vol.Coerce(int),
-                    vol.Range(
-                        min=MIN_SCAN_INTERVAL_MINUTES, max=MAX_SCAN_INTERVAL_MINUTES
-                    ),
-                ),
+                ): _minutes_slider(MIN_SCAN_INTERVAL_MINUTES, MAX_SCAN_INTERVAL_MINUTES, 1),
                 vol.Required(
                     CONF_ENABLE_HEALTH,
                     default=options.get(CONF_ENABLE_HEALTH, False),
@@ -220,6 +241,14 @@ class SuzukiConnectOptionsFlow(OptionsFlow):
                     CONF_ENABLE_EXTENDED,
                     default=options.get(CONF_ENABLE_EXTENDED, False),
                 ): bool,
+                vol.Required(
+                    CONF_EXTENDED_INTERVAL_MINUTES,
+                    default=options.get(
+                        CONF_EXTENDED_INTERVAL_MINUTES, _minutes(DEFAULT_EXTENDED_INTERVAL)
+                    ),
+                ): _minutes_slider(
+                    MIN_EXTENDED_INTERVAL_MINUTES, MAX_EXTENDED_INTERVAL_MINUTES, 30
+                ),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

@@ -35,11 +35,12 @@ from .const import (
     CONF_DEVICE_NAME,
     CONF_ENABLE_EXTENDED,
     CONF_ENABLE_HEALTH,
+    CONF_EXTENDED_INTERVAL_MINUTES,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_EXTENDED_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    EXTENDED_REFRESH,
     HEALTH_REFRESH,
     STORAGE_VERSION,
 )
@@ -130,6 +131,11 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self._enable_extended = entry.options.get(CONF_ENABLE_EXTENDED, False)
         self._extended: dict[int, ExtendedData] = {}
         self._extended_at: float | None = None
+        extended_minutes = entry.options.get(CONF_EXTENDED_INTERVAL_MINUTES)
+        self._extended_interval = (
+            timedelta(minutes=extended_minutes)
+            if extended_minutes else DEFAULT_EXTENDED_INTERVAL
+        )
         self.settings: dict[int, VehicleSettings] = {}
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, storage_key(entry.entry_id))
 
@@ -257,7 +263,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
 
     async def _maybe_fetch_extended(self, contract_ids: list[int]) -> None:
         """Fetch trips, charging history, schedules and subscription when opted
-        in, at most every EXTENDED_REFRESH.
+        in, at most once per extended interval.
 
         Each part is fetched independently: a failure (e.g. an endpoint the
         car's plan doesn't offer) keeps that part's last value and never fails
@@ -268,7 +274,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         now = time.monotonic()
         if (
             self._extended_at is not None
-            and now - self._extended_at < EXTENDED_REFRESH.total_seconds()
+            and now - self._extended_at < self._extended_interval.total_seconds()
         ):
             return
         succeeded = False
