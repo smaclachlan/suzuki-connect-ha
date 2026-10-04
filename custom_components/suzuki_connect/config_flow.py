@@ -31,6 +31,7 @@ from .const import (
     CONF_CONTRACT_IDS,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
+    CONF_ENABLE_EXTENDED,
     CONF_ENABLE_HEALTH,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
@@ -214,6 +215,10 @@ class SuzukiConnectOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_ENABLE_HEALTH,
                     default=options.get(CONF_ENABLE_HEALTH, False),
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_EXTENDED,
+                    default=options.get(CONF_ENABLE_EXTENDED, False),
                 ): bool,
             }
         )

@@ -1,0 +1,29 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "contractID": 999999,
+      "isScheduleCreateAllow": "Y",
+      "schedule": [
+        {
+          "scheduleId": "77",
+          "isActive": "1",
+          "isOngoing": "0",
+          "StartTime": "00:30",
+          "endTime": "05:30",
+          "notifyDays": [1, 2, 3, 4, 5],
+          "status": "1"
+        },
+        {
+          "scheduleId": "78",
+          "isActive": "0",
+          "StartTime": "13:00",
+          "endTime": "15:00",
+          "notifyDays": [6, 7]
+        }
+      ]
+    }
+  }
+}

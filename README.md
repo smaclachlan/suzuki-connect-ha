@@ -26,11 +26,12 @@ Each vehicle gets its own device with:
 
 | Type | Entities |
 |---|---|
-| Sensors | State of charge, Range, Remaining charge time, Odometer, Last reported by car, Energy remaining, Energy to charge target |
+| Sensors | State of charge, Range, Remaining charge time, Odometer, Trip meter, Last reported by car, Energy remaining, Energy to charge target |
 | Binary sensors | Charging, Charger connected, Door lock, Doors, Ignition, Climate active |
 | Device tracker | Location |
 | Numbers (settings) | Battery capacity, Charge target |
 | Diagnostics | Last polled, Telemetry age, Vehicle health (opt-in) |
+| Extended data (opt-in) | Last trip distance, Last trip end, Distance this month, Last charge, Subscription; Charge schedule and Climate schedule binary sensors |
 
 Disabled by default (enable in the entity settings): Average consumption,
 Speed, individual climate states (A/C, preconditioning, defogger, defroster,
@@ -126,6 +127,22 @@ Settings → the integration → **Configure**:
 - **Poll interval** — default 15 minutes, allowed 5–240.
 - **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
   fetched at most hourly (one extra API call per vehicle).
+- **Fetch trips, charging history, schedules and subscription** — off by
+  default. Adds the extended-data entities, refreshed at most every 6 hours
+  (two calls for the account plus four per vehicle). Each part is fetched
+  separately; one that fails keeps its last value and never fails the poll.
+  - *Last trip distance* has the trip's start, end, duration and average
+    consumption as attributes; *Distance this month* has the trip count and
+    the app's monthly driving score and harsh acceleration/braking counts
+    (account-wide).
+  - *Last charge* is when the latest charging session happened, with start
+    and end charge level, duration, energy and AC/DC type as attributes.
+  - *Charge schedule* / *Climate schedule* are on when any schedule is
+    active, with every schedule's settings as attributes.
+  - Trip and charging locations and driver names are never exposed.
+  - These response formats come from the app's code and haven't been checked
+    against a live car yet. If something looks wrong, **Download diagnostics**
+    includes the raw (redacted) responses.
 
 ## Example: send the state of charge to Ohme
 
@@ -187,9 +204,14 @@ reporting delay. This example hasn't yet been tested through a full charge.
   - `chargerConnected_st`: only sent while plugged in. When it's missing,
     *Charger connected* shows unknown rather than off.
   - The meaning of the vehicle-health status codes.
-- **Not exposed yet:** charge schedules and history, climate schedules, trips,
-  geofences, alert settings and subscription status. Endpoints for these are
-  listed in [docs/API.md](docs/API.md).
+- **Trip meter** is the car's `drv_km` value, assumed to be its resettable trip
+  distance in km. Not yet confirmed.
+- **Extended data** (trips, charging history, schedules, subscription) is
+  parsed from formats found in the app's code, not yet checked against a live
+  response. Energy in *Last charge* has no unit in the API and is assumed kWh.
+  In accounts with several cars, trips are matched to cars by contract id.
+- **Not exposed yet:** geofences, alert settings and alert history. Endpoints
+  for these are listed in [docs/API.md](docs/API.md).
 - **Battery capacity** isn't reported by the API and must be entered by hand
   for the energy sensors.
 

@@ -44,7 +44,8 @@
         "title": "Suzuki Connect options",
         "data": {
           "scan_interval_minutes": "Poll interval (minutes)",
-          "enable_health": "Fetch vehicle health (extra API call, hourly)"
+          "enable_health": "Fetch vehicle health (extra API call, hourly)",
+          "enable_extended": "Fetch trips, charging history, schedules and subscription (several extra API calls, every 6 hours)"
         }
       }
     }
@@ -53,6 +54,7 @@
     "sensor": {
       "state_of_charge": { "name": "State of charge" },
       "range": { "name": "Range" },
+      "trip_meter": { "name": "Trip meter" },
       "remaining_charge_time": { "name": "Remaining charge time" },
       "odometer": { "name": "Odometer" },
       "last_reported_by_car": { "name": "Last reported by car" },
@@ -62,7 +64,12 @@
       "energy_to_target": { "name": "Energy to charge target" },
       "average_consumption": { "name": "Average consumption" },
       "vehicle_speed": { "name": "Speed" },
-      "vehicle_health": { "name": "Vehicle health" }
+      "vehicle_health": { "name": "Vehicle health" },
+      "last_trip_distance": { "name": "Last trip distance" },
+      "last_trip_end": { "name": "Last trip end" },
+      "distance_this_month": { "name": "Distance this month" },
+      "last_charge": { "name": "Last charge" },
+      "subscription": { "name": "Subscription" }
     },
     "binary_sensor": {
       "charging": { "name": "Charging" },
@@ -82,7 +89,9 @@
       "handbrake": { "name": "Handbrake" },
       "seatbelt": { "name": "Seatbelt" },
       "bonnet": { "name": "Bonnet" },
-      "boot": { "name": "Boot" }
+      "boot": { "name": "Boot" },
+      "charge_schedule": { "name": "Charge schedule" },
+      "climate_schedule": { "name": "Climate schedule" }
     },
     "number": {
       "battery_capacity": { "name": "Battery capacity" },

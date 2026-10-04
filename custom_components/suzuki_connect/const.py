@@ -14,6 +14,7 @@ CONF_CONTRACT_ID = "contract_id"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
 # Opt-in extra endpoints (each makes additional API calls)
 CONF_ENABLE_HEALTH = "enable_health"
+CONF_ENABLE_EXTENDED = "enable_extended"
 
 DEFAULT_DEVICE_NAME = "HomeAssistant"
 # Reads return cached telematics and do not appear to wake the car, but keep the
@@ -22,6 +23,9 @@ DEFAULT_SCAN_INTERVAL = timedelta(minutes=15)
 MIN_SCAN_INTERVAL_MINUTES = 5
 # Vehicle health changes rarely, so fetch it at most this often.
 HEALTH_REFRESH = timedelta(hours=1)
+# Trips, charging history, schedules and subscription: fetched rarely, as they
+# cost several API calls and change slowly relative to the live status.
+EXTENDED_REFRESH = timedelta(hours=6)
 MAX_SCAN_INTERVAL_MINUTES = 240
 
 # Per-entry storage (persisted refresh token).

@@ -21,9 +21,11 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import SuzukiConfigEntry
-from .const import CONF_ENABLE_HEALTH
+from .const import CONF_ENABLE_EXTENDED, CONF_ENABLE_HEALTH
+from .coordinator import ExtendedData
 from .entity import SuzukiConnectEntity
 
 
@@ -60,8 +62,12 @@ def _energy(status, entity, *, to_target: bool) -> float | None:
 
 
 def _range_unit(status) -> str | None:
-    u = (status.range_unit or "").lower()
-    if u.startswith("mile"):
+    return _distance_unit(status.range_unit)
+
+
+def _distance_unit(unit: str | None) -> str | None:
+    u = (unit or "").strip().lower()
+    if u.startswith("mi"):
         return UnitOfLength.MILES
     if u.startswith("km") or u.startswith("kilo"):
         return UnitOfLength.KILOMETERS
@@ -91,6 +97,15 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement="min",
         value_fn=lambda s, e: s.remaining_charge_minutes,
+    ),
+    # drv_km: assumed to be the car's resettable trip meter, in km.
+    SuzukiSensorDescription(
+        key="trip_meter",
+        translation_key="trip_meter",
+        device_class=SensorDeviceClass.DISTANCE,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        value_fn=lambda s, e: s.trip_meter,
     ),
     SuzukiSensorDescription(
         key="odometer",
@@ -163,6 +178,143 @@ SENSORS: tuple[SuzukiSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class SuzukiExtendedSensorDescription(SensorEntityDescription):
+    """A sensor over the rarely-refreshed extended data.
+
+    ``value_fn``/``attrs_fn``/``unit_fn`` get (extended data, entity); the
+    entity is passed for timezone handling and the current month.
+    """
+
+    value_fn: Callable[[ExtendedData, Any], Any]
+    attrs_fn: Callable[[ExtendedData, Any], dict[str, Any] | None] | None = None
+    unit_fn: Callable[[ExtendedData], str | None] | None = None
+
+
+def _last_trip(ext: ExtendedData):
+    return ext.trips[0] if ext.trips else None
+
+
+def _iso(entity, value) -> str | None:
+    aware = entity.coordinator.vehicle_time(value)
+    return aware.isoformat() if aware else None
+
+
+def _trip_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
+    trip = _last_trip(ext)
+    if trip is None:
+        return None
+    return {
+        "start": _iso(entity, trip.start),
+        "end": _iso(entity, trip.end),
+        "duration_minutes": trip.duration_minutes,
+        "average_consumption": trip.average_consumption,
+        "average_consumption_unit": trip.average_consumption_unit,
+    }
+
+
+def _month_trips(ext: ExtendedData) -> list | None:
+    if ext.trips is None:
+        return None
+    now = dt_util.now()
+    return [
+        t for t in ext.trips
+        if (when := t.start or t.end) and (when.year, when.month) == (now.year, now.month)
+    ]
+
+
+def _month_distance(ext: ExtendedData) -> float | None:
+    trips = _month_trips(ext)
+    if trips is None:
+        return None
+    unit = _month_unit(ext)
+    return round(sum(t.distance or 0 for t in trips if t.distance_unit == unit or unit is None), 1)
+
+
+def _month_unit(ext: ExtendedData) -> str | None:
+    trips = _month_trips(ext) or ext.trips or []
+    return next((t.distance_unit for t in trips if t.distance_unit), None)
+
+
+def _month_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
+    trips = _month_trips(ext)
+    if trips is None:
+        return None
+    report = ext.driving
+    return {
+        "trips": len(trips),
+        # Account-wide figures from the app's monthly driver report.
+        "driving_score": report.driving_score if report else None,
+        "harsh_acceleration_count": report.harsh_acceleration_count if report else None,
+        "harsh_braking_count": report.harsh_braking_count if report else None,
+    }
+
+
+def _last_charge(ext: ExtendedData):
+    return ext.charging.sessions[0] if ext.charging and ext.charging.sessions else None
+
+
+def _charge_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
+    session = _last_charge(ext)
+    if session is None:
+        return None
+    return {
+        "start_level": session.start_level,
+        "end_level": session.end_level,
+        "duration_minutes": session.duration_minutes,
+        # The API gives no unit for this; assumed kWh until confirmed.
+        "energy": session.energy,
+        "charge_type": session.charge_type,
+    }
+
+
+EXTENDED_SENSORS: tuple[SuzukiExtendedSensorDescription, ...] = (
+    SuzukiExtendedSensorDescription(
+        key="last_trip_distance",
+        translation_key="last_trip_distance",
+        device_class=SensorDeviceClass.DISTANCE,
+        value_fn=lambda x, e: t.distance if (t := _last_trip(x)) else None,
+        unit_fn=lambda x: _distance_unit(t.distance_unit) if (t := _last_trip(x)) else None,
+        attrs_fn=_trip_attrs,
+    ),
+    SuzukiExtendedSensorDescription(
+        key="last_trip_end",
+        translation_key="last_trip_end",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda x, e: (
+            e.coordinator.vehicle_time(t.end or t.start) if (t := _last_trip(x)) else None
+        ),
+    ),
+    SuzukiExtendedSensorDescription(
+        key="distance_this_month",
+        translation_key="distance_this_month",
+        device_class=SensorDeviceClass.DISTANCE,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda x, e: _month_distance(x),
+        unit_fn=lambda x: _distance_unit(_month_unit(x)),
+        attrs_fn=_month_attrs,
+    ),
+    SuzukiExtendedSensorDescription(
+        key="last_charge",
+        translation_key="last_charge",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda x, e: (
+            e.coordinator.vehicle_time(c.time) if (c := _last_charge(x)) else None
+        ),
+        attrs_fn=_charge_attrs,
+    ),
+    SuzukiExtendedSensorDescription(
+        key="subscription",
+        translation_key="subscription",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda x, e: x.subscription.plan_name if x.subscription else None,
+        attrs_fn=lambda x, e: (
+            {"status_code": x.subscription.status} if x.subscription else None
+        ),
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SuzukiConfigEntry,
@@ -175,6 +327,10 @@ async def async_setup_entry(
         entities.append(SuzukiLastPolledSensor(coordinator, cid))
         if entry.options.get(CONF_ENABLE_HEALTH):
             entities.append(SuzukiHealthSensor(coordinator, cid))
+        if entry.options.get(CONF_ENABLE_EXTENDED):
+            entities.extend(
+                SuzukiExtendedSensor(coordinator, cid, d) for d in EXTENDED_SENSORS
+            )
     async_add_entities(entities)
 
 
@@ -245,3 +401,39 @@ class SuzukiHealthSensor(SuzukiConnectEntity, SensorEntity):
             "failure_count": health.failure_count,
             "last_updated": health.last_updated,
         }
+
+
+class SuzukiExtendedSensor(SuzukiConnectEntity, SensorEntity):
+    """A sensor over trips, charging history or subscription (opt-in)."""
+
+    entity_description: SuzukiExtendedSensorDescription
+
+    def __init__(
+        self, coordinator, contract_id: int, description: SuzukiExtendedSensorDescription
+    ) -> None:
+        super().__init__(coordinator, contract_id, description.key)
+        self.entity_description = description
+
+    @property
+    def _extended(self) -> ExtendedData | None:
+        vdata = self._vehicle_data
+        return vdata.extended if vdata else None
+
+    @property
+    def native_value(self) -> Any:
+        ext = self._extended
+        return self.entity_description.value_fn(ext, self) if ext else None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        if self.entity_description.unit_fn is None:
+            return self.entity_description.native_unit_of_measurement
+        ext = self._extended
+        return self.entity_description.unit_fn(ext) if ext else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        ext = self._extended
+        if ext is None or self.entity_description.attrs_fn is None:
+            return None
+        return self.entity_description.attrs_fn(ext, self)

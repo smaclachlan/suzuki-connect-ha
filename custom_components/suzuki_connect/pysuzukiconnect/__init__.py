@@ -25,7 +25,17 @@ from .exceptions import (
     SuzukiNoVehicleError,
     SuzukiSessionTakenOver,
 )
-from .models import Vehicle, VehicleHealth, VehicleStatus
+from .models import (
+    ChargeSession,
+    ChargingHistory,
+    DrivingHistory,
+    Schedules,
+    Subscription,
+    Trip,
+    Vehicle,
+    VehicleHealth,
+    VehicleStatus,
+)
 
 __version__ = "0.1.0"
 
@@ -34,6 +44,12 @@ __all__ = [
     "Vehicle",
     "VehicleStatus",
     "VehicleHealth",
+    "DrivingHistory",
+    "Trip",
+    "ChargingHistory",
+    "ChargeSession",
+    "Schedules",
+    "Subscription",
     "SuzukiConnectError",
     "SuzukiAuthError",
     "SuzukiAnotherActiveLogin",

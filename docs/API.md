@@ -139,7 +139,7 @@ The EV live state is at **`result.data.DASHBOARD_DATA.user_data`**:
 | `ignition_status`,`doorlock_st`,`opendoor_st`,`hzrd_st`,`prbrk_st`,`headlight_st` | | body/ignition |
 | `doorLockedRemotely`,`doorLockResponseTime`,`isDoorUnlockAllowed` | `Y` / ts / `N` | lock detail |
 | `latestGPS[0].latitude/longitude`, `GPS[0]...` | | location |
-| `mileage`, `drv_km` | `22632`, `153` | odometer / trip |
+| `mileage`, `drv_km` | `22632`, `153` | odometer (km) / trip meter (km, assumed resettable) |
 | `fuel` | `46.7` | mirrors SOC for EV (≈ `currentChargeLevel`) |
 | `*Pending` (`doorLockPending`, `acONPending`, …) | `N` | in-flight remote-command flags |
 
@@ -161,6 +161,41 @@ Reads returned cached telematics with `realTimeOpsPending: N` — polling does
 | `GET /api/v2/climate_control_schedule/getAll/{contract_id}` | `GetAllScheduleListData` | climate schedules |
 | `GET /api/trip/drivingHistory/{month}` | `DrivingHistoryResponse` | trips |
 | `GET /api/profile/getAlertSettings/{contract_id}` | `AlertSettingsResponse` | alert config |
+
+### Extended data used by the integration (from the decompiled app; unverified live)
+
+Request formats:
+
+| Call | Request |
+|---|---|
+| Driving history | `GET /api/trip/drivingHistory/{month}`, `month` = `yyyy-MM`. Account-wide: no contract id; each trip carries `contractID`. |
+| Charging history | `POST /api/v2/remoteCharge/charging_history`, JSON `{"contractId": <id>, "default": "0"}` (`"0"` is what the history screen sends) |
+| Charge schedules | `POST /api/v2/remoteCharge/getAllSchedules`, JSON `{"contractID": <id>}` |
+| Climate schedules | `GET /api/v2/climate_control_schedule/getAll/{contract_id}` |
+| Subscription | `GET /api/subscription/getStatus/{contractId}` |
+
+Response fields (all under `result.data`):
+
+- **Driving history:** `tripDetails[].{tripDate, tripList[]}`; each trip has
+  `contractID`, `startDate`/`startTime`, `endDate`/`endTime`, `tripDistance`
+  (+`tripDistanceUnit`), `trip_duration`, `avgConsumption`
+  (+`avgConsumptionUnit`), `startPosition`/`endPosition` (lat/lon lists),
+  `trip_driver_name`, `USR_TIMEZONE`. `driverReport.{drb_score,
+  harsh_acc_count, harsh_break_count}` is a monthly summary. Value formats
+  (time and duration strings) are unknown.
+- **Charging history:** `chargingHistoryList[].{chargeTime,
+  batteryChargedDuration, batteryLevelAtStartCharge, batteryLevelAtStopCharge,
+  energyConsumption, chargeType, chargingStLatitude, chargingStLongitude,
+  chargingStLocation}`, plus summary fields (`averageChargeAmount`,
+  `electricityConsumption`, `kmDriven`, …). No unit is given for
+  `energyConsumption`.
+- **Charge schedules:** `schedule[].{scheduleId, isActive, isOngoing,
+  StartTime, endTime, notifyDays, activeDay, scheduleDate, status}`.
+- **Climate schedules:** `schedules[].{reservation_id, active, schedule_time,
+  schedule_date, selected_days, isRepeatSelected, duration, temperature,
+  options_selected}`.
+- **Subscription:** `subscriptionDetails.{planName, planId,
+  subscriptionStatus, focStatus, foc_error_msg}`.
 
 ## Remote commands (write — need `r_key` and/or remote PIN)
 

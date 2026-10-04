@@ -123,4 +123,16 @@ def _vehicle_diagnostics(coordinator, contract_id: int, vdata) -> dict[str, Any]
         "vehicle": redact(vdata.vehicle.raw),
         "status": redact(vdata.status.raw),
         "health": redact(vdata.health.raw) if vdata.health else None,
+        "extended": _extended_diagnostics(vdata.extended),
+    }
+
+
+def _extended_diagnostics(ext) -> dict[str, Any] | None:
+    """Raw (redacted) extended payloads, to confirm their unverified shapes."""
+    if ext is None:
+        return None
+    parts = ("driving", "charging", "charge_schedules", "climate_schedules", "subscription")
+    return {
+        "trips_parsed": len(ext.trips) if ext.trips is not None else None,
+        **{p: redact(getattr(ext, p).raw) if getattr(ext, p) else None for p in parts},
     }

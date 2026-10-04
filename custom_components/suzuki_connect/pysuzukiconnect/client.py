@@ -1,6 +1,7 @@
 """High-level async client for Suzuki Connect (EU)."""
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 import aiohttp
@@ -8,7 +9,15 @@ import aiohttp
 from . import const
 from .auth import SuzukiAuth, first_error, request_json
 from .exceptions import SuzukiApiError, SuzukiNoVehicleError
-from .models import Vehicle, VehicleHealth, VehicleStatus
+from .models import (
+    ChargingHistory,
+    DrivingHistory,
+    Schedules,
+    Subscription,
+    Vehicle,
+    VehicleHealth,
+    VehicleStatus,
+)
 
 
 class SuzukiConnectClient:
@@ -67,6 +76,38 @@ class SuzukiConnectClient:
             "GET", const.EP_VEHICLE_HEALTH.format(contract_id=int(contract_id))
         )
         return VehicleHealth.from_response(data)
+
+    async def async_get_driving_history(self, month: str) -> DrivingHistory:
+        """Trips for a calendar month (``yyyy-MM``), across the whole account."""
+        if not re.fullmatch(r"\d{4}-\d{2}", month):
+            raise ValueError("month must be yyyy-MM")
+        data = await self._authed_request(
+            "GET", const.EP_DRIVING_HISTORY.format(month=month)
+        )
+        return DrivingHistory.from_response(data)
+
+    async def async_get_charging_history(self, contract_id: int) -> ChargingHistory:
+        # "default": "0" is what the app sends when opening the history screen.
+        body = {"contractId": int(contract_id), "default": "0"}
+        data = await self._authed_request("POST", const.EP_CHARGING_HISTORY, json=body)
+        return ChargingHistory.from_response(data)
+
+    async def async_get_charge_schedules(self, contract_id: int) -> Schedules:
+        body = {"contractID": int(contract_id)}
+        data = await self._authed_request("POST", const.EP_CHARGE_SCHEDULES, json=body)
+        return Schedules.charge_from_response(data)
+
+    async def async_get_climate_schedules(self, contract_id: int) -> Schedules:
+        data = await self._authed_request(
+            "GET", const.EP_CLIMATE_SCHEDULES.format(contract_id=int(contract_id))
+        )
+        return Schedules.climate_from_response(data)
+
+    async def async_get_subscription(self, contract_id: int) -> Subscription:
+        data = await self._authed_request(
+            "GET", const.EP_SUBSCRIPTION.format(contract_id=int(contract_id))
+        )
+        return Subscription.from_response(data)
 
     async def async_get_primary_ev_status(self) -> tuple[Vehicle, VehicleStatus]:
         """Convenience: first EV (or first vehicle) plus its status."""
