@@ -36,6 +36,7 @@ pull requests are welcome.
 - [Configuration](#configuration)
 - [Entities](#entities)
 - [Trip and charging history](#trip-and-charging-history)
+- [Dashboard cards](#dashboard-cards)
 - [How it works](#how-it-works)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
@@ -49,7 +50,7 @@ pull requests are welcome.
 - **Doors and driving** — doors, lock, ignition, odometer, trip meter and
   live location (device tracker).
 - **Trips and charging history** — browse every trip and charging session in
-  Home Assistant's Calendar, plus a recent-trips table for dashboards.
+  Home Assistant's Calendar, plus ready-made dashboard cards.
 - **Fast or gentle polling** — live data as often as every minute; slow-changing
   data on its own longer interval.
 - **Careful with your session** — refreshes its token instead of logging in,
@@ -173,15 +174,39 @@ sidebar to browse them:
   as automation triggers.
 - Locations are never included.
 
-### Recent trips table
+## Dashboard cards
 
-*Trip last distance* has a `recent_trips` attribute with the last 10 trips
-(kept out of the history database). To show them as a table, add a
-**Markdown** card to a dashboard (**Edit dashboard → Add card → Markdown →
-Show code editor**) and paste:
+The integration comes with two cards; there's nothing extra to install. With
+extended data on, edit a dashboard → **Add card** and search for **Suzuki**:
+
+| Card | Shows | Pick this sensor |
+|---|---|---|
+| **Suzuki recent trips** | Last 10 trips: date, time, distance, duration, efficiency, battery used | *Trip last distance* |
+| **Suzuki charging sessions** | Recent charging sessions: date, time, charge added, energy, duration, type | *Charging last session* |
+
+Each card has a visual editor (sensor, title, number of rows). In YAML:
+
+```yaml
+type: custom:suzuki-recent-trips-card
+entity: sensor.e_vitara_trip_last_distance
+title: Recent trips   # optional
+max: 10               # optional, 1–10
+```
+
+```yaml
+type: custom:suzuki-charging-sessions-card
+entity: sensor.e_vitara_charging_last_session
+```
+
+The data comes from the sensors' `recent_trips` and `recent_sessions`
+attributes, which are kept out of the history database. After updating the
+integration, reload the browser page if a card doesn't appear.
 
 <details>
-<summary>Recent trips card (YAML)</summary>
+<summary>Alternative: a plain Markdown card (no custom card)</summary>
+
+Add a **Markdown** card (**Edit dashboard → Add card → Markdown → Show code
+editor**) and paste:
 
 <!-- recent-trips-card -->
 ```yaml
@@ -197,17 +222,11 @@ content: |
 ```
 <!-- /recent-trips-card -->
 
-Replace the entity ID with your own: installs that started on 0.2.0b1 or b2
-have `sensor.e_vitara_last_trip_distance`.
-
 </details>
 
-It renders like this:
-
-| Date | Time | Distance | Duration | Efficiency | Battery |
-|:--|:--|--:|--:|--:|--:|
-| Sat 03 Oct | 17:40 | 42.6 miles | 51 min | 3.1 miles/kWh | 21% |
-| Sat 03 Oct | 08:15 | 12.4 miles | 24 min | 2.8 miles/kWh | 6% |
+Entity IDs above are for new installs; installs that started on 0.2.0b1 or b2
+have `sensor.e_vitara_last_trip_distance` and
+`sensor.e_vitara_last_charge` instead.
 
 ## How it works
 
@@ -338,6 +357,7 @@ still, check the file before attaching it to an issue.
 | *Last reported by car* is hours old | Normal while parked or charging; see [How fresh is the data?](#how-fresh-is-the-data) |
 | Energy sensors are *unknown* | Set **Battery capacity** on the device page. |
 | Trip or charging entities are missing | Turn on **Fetch trips, charging history, schedules and subscription** in the options. |
+| The Suzuki cards aren't in the card picker | Reload the browser page (or clear its cache) after installing or updating. |
 
 ## Known limitations
 

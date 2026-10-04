@@ -6,9 +6,12 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_CONTRACT_ID, CONF_CONTRACT_IDS, STORAGE_VERSION
+from .cards import async_register_cards
+from .const import CONF_CONTRACT_ID, CONF_CONTRACT_IDS, DOMAIN, STORAGE_VERSION
 from .coordinator import SuzukiConnectCoordinator, storage_key
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +25,14 @@ PLATFORMS: list[Platform] = [
 ]
 
 type SuzukiConfigEntry = ConfigEntry[SuzukiConnectCoordinator]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the bundled dashboard cards (once, not per account)."""
+    await async_register_cards(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SuzukiConfigEntry) -> bool:

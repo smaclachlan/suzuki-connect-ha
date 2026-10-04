@@ -200,7 +200,7 @@ def _iso(entity, value) -> str | None:
     return aware.isoformat() if aware else None
 
 
-RECENT_TRIPS = 10
+RECENT_TRIPS = 10  # also the number of recent charging sessions
 
 
 def _trip_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
@@ -279,9 +279,20 @@ def _charge_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
         "start_level": session.start_level,
         "end_level": session.end_level,
         "duration_minutes": session.duration_minutes,
-        # The API gives no unit for this; assumed kWh until confirmed.
-        "energy": session.energy,
+        "energy": session.energy,  # kWh
         "charge_type": session.charge_type,
+        # Newest first, for the charging sessions card. Not recorded.
+        "recent_sessions": [
+            {
+                "start": _iso(entity, s.time),
+                "duration_minutes": s.duration_minutes,
+                "start_level": s.start_level,
+                "end_level": s.end_level,
+                "energy": s.energy,
+                "charge_type": s.charge_type,
+            }
+            for s in entity.coordinator.charge_sessions(entity.contract_id)[:RECENT_TRIPS]
+        ],
     }
 
 
@@ -363,10 +374,6 @@ class SuzukiConnectSensor(SuzukiConnectEntity, SensorEntity):
         self.entity_description = description
 
     @property
-    def contract_id(self) -> int:
-        return self._contract_id
-
-    @property
     def native_unit_of_measurement(self) -> str | None:
         if self.entity_description.unit_fn:
             # Read even while unavailable, before the car has ever reported.
@@ -426,7 +433,7 @@ class SuzukiExtendedSensor(SuzukiConnectEntity, SensorEntity):
     entity_description: SuzukiExtendedSensorDescription
     # A list of trips: shown in the UI, but too big to store with every
     # state change in the recorder.
-    _unrecorded_attributes = frozenset({"recent_trips"})
+    _unrecorded_attributes = frozenset({"recent_trips", "recent_sessions"})
 
     def __init__(
         self, coordinator, contract_id: int, description: SuzukiExtendedSensorDescription
