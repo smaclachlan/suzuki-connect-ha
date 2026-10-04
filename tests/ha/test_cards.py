@@ -21,6 +21,19 @@ def test_card_file_is_packaged():
     assert "window.customCards" in source
 
 
+def test_cards_register_after_home_assistant_is_defined():
+    # HA's app swaps window.customElements for a scoped-registry polyfill
+    # after this module may already have run (seen live in Firefox: the
+    # cards were listed but "Custom element not found"). Definitions must
+    # wait for <home-assistant> and use the registry current at that point.
+    source = (CARDS_DIR / CARDS_FILE).read_text()
+    assert 'whenDefined("home-assistant").then(register)' in source
+    register = source[source.index("function register()"):]
+    assert "const registry = window.customElements;" in register
+    top_level = source[:source.index("function register()")]
+    assert "customElements.define" not in top_level
+
+
 async def test_registers_versioned_card_url(hass):
     hass.http = MagicMock(async_register_static_paths=AsyncMock())
     hass.config.components.add("frontend")
