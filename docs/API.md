@@ -51,14 +51,20 @@ Same endpoint, `grant_type=refresh_token`, plus `access_token`, `refresh_token`,
 `mailID`, `client_id`, `client_secret`, and the same device fields.
 
 ### Token lifetime
-The login and refresh responses include `expiresIn` (observed `240`), but the
-app never reads it. Its OkHttp `Authenticator` (`jc/C2989j`) refreshes with
-`grant_type=refresh_token` only when a call returns **401**, then retries. The
-integration does the same. The access token is a JWT whose `exp` is 240 s
-after issue (confirmed live), but whether the server enforces it is unknown,
-so `exp` isn't acted on. Diagnostics show how far the current token is past
-`exp` (`access_token_seconds_past_jwt_exp`) and the age of each rejected token,
-so enforcement can be observed.
+The login and refresh responses include `expiresIn: 240` (seconds). The app
+never reads it: its OkHttp `Authenticator` (`jc/C2989j`) refreshes with
+`grant_type=refresh_token` only when a call returns **401**, then retries.
+
+Confirmed live: the access token is a JWT whose `exp` is 240 s after issue,
+and the server **enforces** it (tokens rejected at 244 s). The integration
+refreshes 30 s before `exp`, and on any 401.
+
+**A refresh must include the previous access token** (`access_token`), as the
+app's refresh does, even when that token has expired. Sending an empty one
+made every refresh fail, so each renewal fell back to a forced login
+(`override=1`) that logged the phone out. The integration keeps the last
+access token for this and saves it with the refresh token, so a restart can
+refresh too.
 
 ### Authorization
 A request interceptor adds `Authorization: Bearer <JWT>` to **every** call except

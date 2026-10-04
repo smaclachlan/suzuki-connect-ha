@@ -111,12 +111,16 @@ async def async_get_config_entry_diagnostics(
             ),
             "access_token_is_jwt_with_exp": jwt_expiry(auth.access_token) is not None,
             "access_token_age_s": _round(auth.token_age),
-            # Positive: the token is still in use past its JWT exp.
             "access_token_seconds_past_jwt_exp": _round(auth.token_seconds_past_exp),
             # Evidence for the real token lifetime (expiresIn is not used).
             "reported_expires_in": auth.reported_expires_in,
             "tokens_rejected": auth.tokens_rejected,
             "last_rejected_token_age_s": _round(auth.last_rejected_token_age),
+            # Since startup. Refresh failures fall back to forced logins,
+            # which log other devices (the phone app) out.
+            "refresh_failures": auth.refresh_failures,
+            "last_refresh_error": auth.last_refresh_error,
+            "forced_logins": auth.forced_logins,
             "has_refresh_token": auth.refresh_token is not None,
             "last_login": _iso(auth.last_login_at),
             "last_refresh": _iso(auth.last_refresh_at),

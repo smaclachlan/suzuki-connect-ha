@@ -115,6 +115,10 @@ class FakeBackend:
         self.counter = 0
         self.valid_access: set[str] = set()
         self.valid_refresh: set[str] = set()
+        # Every access token ever issued: a refresh must send one of these
+        # (expired is fine), as Suzuki appears to require.
+        self.issued_access: set[str] = set()
+        self.refresh_needs_access_token = True
         self.logins: list[str] = []  # override flag per password login
         self.refreshes = 0
         self.refresh_survives_eviction = False
@@ -125,6 +129,7 @@ class FakeBackend:
         access, refresh = f"access-{self.counter}", f"refresh-{self.counter}"
         self.valid_access.add(access)
         self.valid_refresh.add(refresh)
+        self.issued_access.add(access)
         return envelope(access_token=access, refresh_token=refresh, expiresIn=240)
 
     def _login(self, call):
@@ -133,6 +138,8 @@ class FakeBackend:
             self.refreshes += 1
             if form["refresh_token"] not in self.valid_refresh:
                 return 400, error_envelope(400001, "Invalid refresh token")
+            if self.refresh_needs_access_token and form["access_token"] not in self.issued_access:
+                return 400, error_envelope(400003, "Invalid access token")
             return 200, self._mint()
         self.logins.append(form["override"])
         if form["password"] != PASSWORD:
