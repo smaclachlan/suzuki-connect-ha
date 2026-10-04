@@ -553,3 +553,137 @@ async def test_diagnostics_redact_live_leaks(hass, patch_session, freezer):
     for secret in ("7700900123", "12345", "X-Amz-Credential", "t_123456_261002_1747",
                    "-0.2", "-0.12", "51.6", "Services"):
         assert secret not in dumped, secret
+
+
+async def _events(hass, entity_id, start, end) -> list[dict]:
+    response = await hass.services.async_call(
+        "calendar", "get_events",
+        {"start_date_time": start, "end_date_time": end},
+        target={"entity_id": entity_id}, blocking=True, return_response=True,
+    )
+    return response[entity_id]["events"]
+
+
+async def test_trip_calendar(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    await _setup(hass, _extended_entry())
+    events = await _events(
+        hass, "calendar.e_vitara_trip_history",
+        "2026-10-01T00:00:00+01:00", "2026-11-01T00:00:00+01:00",
+    )
+    assert len(events) == 2  # the other car's trip is excluded
+    by_summary = {e["summary"]: e for e in events}
+    long_trip = by_summary["Trip: 1042.5 km · 1 h 12 min · 5.4 km/kWh"]
+    assert "Battery used: 51%" in long_trip["description"]
+    assert "Odometer: 22491 → 22631" in long_trip["description"]
+    assert "Trip: 18.4 km · 26 min · 6.1 km/kWh" in by_summary
+    for event in events:
+        assert event["end"] > event["start"]
+    assert "51.6" not in json.dumps(events) and "-0.2" not in json.dumps(events)
+
+
+async def test_trip_calendar_fetches_older_months_once(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    august = api.EP_DRIVING_HISTORY.format(month="2026-08")
+    july = api.EP_DRIVING_HISTORY.format(month="2026-07")
+    backend.session.route("GET", august, lambda call: (200, {"result": {"data": {
+        "tripStartFrom": "2026-08", "tripDetails": [{"tripDate": "2026/08/15", "tripList": [
+            {"contractID": 999999, "tripDetailsID": 9, "startDate": "2026-08-15",
+             "startTime": "10:00", "endDate": "2026-08-15", "endTime": "10:30",
+             "tripDistance": "20.0", "tripDistanceUnit": "miles", "trip_duration": "00:30:00"}]}]}}}))
+    await _setup(hass, _extended_entry())
+
+    for _ in range(2):
+        events = await _events(
+            hass, "calendar.e_vitara_trip_history",
+            "2026-07-01T00:00:00+01:00", "2026-09-01T00:00:00+01:00",
+        )
+        assert [e["summary"] for e in events] == ["Trip: 20 miles · 30 min"]
+    assert len(backend.session.calls_to(august)) == 1   # cached after the first view
+    assert backend.session.calls_to(july) == []         # before tripStartFrom
+
+
+async def test_trip_calendar_never_fetches_future_months(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    await _setup(hass, _extended_entry())
+    await _events(
+        hass, "calendar.e_vitara_trip_history",
+        "2026-11-01T00:00:00+00:00", "2027-01-01T00:00:00+00:00",
+    )
+    assert not [c for c in backend.session.calls if "drivingHistory/2026-11" in c["path"]]
+
+
+async def test_charging_calendar_accumulates(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    window = ("2026-09-01T00:00:00+01:00", "2026-11-01T00:00:00+01:00")
+    events = await _events(hass, "calendar.e_vitara_charging_history", *window)
+    assert sorted(e["summary"] for e in events) == [
+        "Charging: 31% → 80% · 29 kWh · 3 h 05 min · Slow",
+        "Charging: 40% → 62% · 13 kWh · 45 min · Rapid",
+    ]
+
+    # The endpoint only returns the latest sessions; older ones are kept.
+    newer = load_fixture("charging_history.json")
+    newer["result"]["data"]["chargingHistoryList"] = [{
+        "chargeTime": "2026/10/04 05:52", "batteryChargedDuration": "02 h 00 min",
+        "energyConsumption": "19 kWh", "chargeType": "Slow",
+        "batteryLevelAtStartCharge": "43%", "batteryLevelAtStopCharge": "82%"}]
+    backend.session.route("POST", api.EP_CHARGING_HISTORY, lambda call: (200, newer))
+    freezer.tick(DEFAULT_SLOW_INTERVAL)
+    await entry.runtime_data.async_refresh()
+    events = await _events(hass, "calendar.e_vitara_charging_history", *window)
+    assert len(events) == 3
+
+
+async def test_recent_trips_attribute(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    await _setup(hass, _extended_entry())
+    state = hass.states.get("sensor.e_vitara_trip_last_distance")
+    recent = state.attributes["recent_trips"]
+    assert [t["distance"] for t in recent] == [1042.5, 18.4]  # newest first
+    assert recent[0]["battery_used_pct"] == 51
+    assert recent[0]["start"].startswith("2026-10-02T17:40")
+    assert "latitude" not in json.dumps(recent)
+
+
+async def test_recent_trips_not_recorded(hass, patch_session):
+    from custom_components.suzuki_connect.sensor import SuzukiExtendedSensor
+    assert "recent_trips" in SuzukiExtendedSensor._unrecorded_attributes
+
+
+async def test_no_calendars_without_extended(hass, patch_session):
+    await _setup(hass, _entry())
+    assert hass.states.get("calendar.e_vitara_trip_history") is None
+
+
+async def test_readme_recent_trips_card_renders(hass, patch_session, freezer):
+    # The Markdown card in the README must render a table from real data.
+    import re
+    from pathlib import Path
+
+    from homeassistant.helpers.template import Template
+
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    await _setup(hass, _extended_entry())
+    readme = (Path(__file__).parents[2] / "README.md").read_text()
+    card = re.search(
+        r"<!-- recent-trips-card -->\n```yaml\n(.*?)```", readme, re.S
+    ).group(1)
+    content = card.split("content: |\n", 1)[1]
+    content = "\n".join(line.removeprefix("  ") for line in content.splitlines())
+    rendered = Template(content, hass).async_render(parse_result=False)
+    rows = [line for line in rendered.splitlines() if line.startswith("|")]
+    assert rows[0].startswith("| Date | Time | Distance")
+    assert len(rows) == 2 + 2  # header, separator, two trips
+    assert "1042.5 km" in rows[2] and "72 min" in rows[2] and "51%" in rows[2]

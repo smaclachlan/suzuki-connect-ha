@@ -200,6 +200,9 @@ def _iso(entity, value) -> str | None:
     return aware.isoformat() if aware else None
 
 
+RECENT_TRIPS = 10
+
+
 def _trip_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
     trip = _last_trip(ext)
     if trip is None:
@@ -210,6 +213,20 @@ def _trip_attrs(ext: ExtendedData, entity) -> dict[str, Any] | None:
         "duration_minutes": trip.duration_minutes,
         "average_consumption": trip.average_consumption,
         "average_consumption_unit": trip.average_consumption_unit,
+        # Newest first, for a dashboard table (see README). Not recorded.
+        "recent_trips": [
+            {
+                "start": _iso(entity, t.start),
+                "end": _iso(entity, t.end),
+                "distance": t.distance,
+                "distance_unit": t.distance_unit,
+                "duration_minutes": t.duration_minutes,
+                "average_consumption": t.average_consumption,
+                "average_consumption_unit": t.average_consumption_unit,
+                "battery_used_pct": t.battery_used_pct,
+            }
+            for t in (ext.trips or [])[:RECENT_TRIPS]
+        ],
     }
 
 
@@ -407,6 +424,9 @@ class SuzukiExtendedSensor(SuzukiConnectEntity, SensorEntity):
     """A sensor over trips, charging history or subscription (opt-in)."""
 
     entity_description: SuzukiExtendedSensorDescription
+    # A list of trips: shown in the UI, but too big to store with every
+    # state change in the recorder.
+    _unrecorded_attributes = frozenset({"recent_trips"})
 
     def __init__(
         self, coordinator, contract_id: int, description: SuzukiExtendedSensorDescription

@@ -1,6 +1,7 @@
 """Data update coordinator for Suzuki Connect."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -27,7 +28,7 @@ from .pysuzukiconnect import (
     VehicleHealth,
     VehicleStatus,
 )
-from .pysuzukiconnect.models import Trip, localize
+from .pysuzukiconnect.models import ChargeSession, Trip, localize
 
 from .const import (
     CONF_CONTRACT_IDS,
@@ -49,6 +50,18 @@ _LOGGER = logging.getLogger(__name__)
 
 # Debounce token writes; a login and refresh in quick succession write once.
 TOKEN_SAVE_DELAY = 10
+# Months of trips the calendar may fetch in one request (e.g. a year view).
+MAX_TRIP_MONTHS_PER_REQUEST = 12
+
+
+def _months_between(start: datetime, end: datetime) -> list[str]:
+    """yyyy-MM for every month overlapping [start, end)."""
+    months = []
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        months.append(f"{year:04d}-{month:02d}")
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return months
 
 
 def storage_key(entry_id: str) -> str:
@@ -131,6 +144,15 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self._enable_extended = entry.options.get(CONF_ENABLE_EXTENDED, False)
         self._extended: dict[int, ExtendedData] = {}
         self._extended_at: float | None = None
+        # Driving history by month (yyyy-MM), account-wide. This and last month
+        # are refreshed on the slow path; older months are fetched when the
+        # trip calendar is browsed, then kept (they no longer change).
+        self._trip_months: dict[str, DrivingHistory] = {}
+        self._trip_months_lock = asyncio.Lock()
+        self._first_trip_month: str | None = None
+        # Charging sessions seen so far, per car, keyed by start time. The
+        # history endpoint returns only the latest few, so this builds up.
+        self._charge_log: dict[int, dict[datetime, ChargeSession]] = {}
         slow_minutes = entry.options.get(CONF_SLOW_INTERVAL_MINUTES)
         self._slow_interval = (
             timedelta(minutes=slow_minutes) if slow_minutes else DEFAULT_SLOW_INTERVAL
@@ -338,6 +360,11 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
                 value = await fetch(label, call(cid))
                 if value is not None:
                     setattr(ext, attr, value)
+            if ext.charging is not None:
+                log = self._charge_log.setdefault(cid, {})
+                for session in ext.charging.sessions:
+                    if session.time is not None:
+                        log[session.time] = session
         # If everything failed (e.g. a transient outage), try again next poll.
         if succeeded:
             self._extended_at = now
@@ -350,9 +377,52 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         last_month = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
         current = await fetch("driving history", self.client.async_get_driving_history(this_month))
         previous = await fetch("driving history", self.client.async_get_driving_history(last_month))
+        for month, history in ((this_month, current), (last_month, previous)):
+            if history is not None:
+                self._trip_months[month] = history
+                self._first_trip_month = history.first_month or self._first_trip_month
         if current is None:
             return None
         return current.merged(previous) if previous is not None else current
+
+    async def async_trips_between(
+        self, contract_id: int, start: datetime, end: datetime
+    ) -> list[Trip]:
+        """One car's trips overlapping [start, end), for the trip calendar.
+
+        Months not yet cached are fetched on demand (at most
+        MAX_TRIP_MONTHS_PER_REQUEST per call, never before the account's
+        first trip month or after this month). A failed fetch is skipped.
+        """
+        months = _months_between(dt_util.as_local(start), dt_util.as_local(end))
+        this_month = dt_util.now().strftime("%Y-%m")
+        wanted = [
+            m for m in months
+            if m <= this_month and (self._first_trip_month is None or m >= self._first_trip_month)
+        ]
+        async with self._trip_months_lock:
+            missing = [m for m in wanted if m not in self._trip_months]
+            for month in missing[:MAX_TRIP_MONTHS_PER_REQUEST]:
+                try:
+                    self._trip_months[month] = await self.client.async_get_driving_history(month)
+                except SuzukiConnectError as err:
+                    _LOGGER.debug("Fetching trips for %s failed: %s", month, err)
+        only_vehicle = len(self.vehicles) <= 1
+        trips = []
+        for month in wanted:
+            if (history := self._trip_months.get(month)) is None:
+                continue
+            for trip in history.for_contract(contract_id, only_vehicle=only_vehicle):
+                t_start = self.vehicle_time(trip.start)
+                t_end = self.vehicle_time(trip.end) or t_start
+                if t_start is not None and t_start < end and t_end >= start:
+                    trips.append(trip)
+        return trips
+
+    def charge_sessions(self, contract_id: int) -> list[ChargeSession]:
+        """Every charging session seen for a car since startup, newest first."""
+        log = self._charge_log.get(contract_id, {})
+        return [log[t] for t in sorted(log, reverse=True)]
 
     async def _maybe_fetch_health(self, contract_id: int) -> VehicleHealth | None:
         """Fetch vehicle health only when opted in, and no more than HEALTH_REFRESH."""
