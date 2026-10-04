@@ -37,16 +37,16 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
     CONF_ENABLE_EXTENDED,
-    CONF_EXTENDED_INTERVAL_MINUTES,
+    CONF_SLOW_INTERVAL_MINUTES,
     CONF_ENABLE_HEALTH,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
-    DEFAULT_EXTENDED_INTERVAL,
+    DEFAULT_SLOW_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    MAX_EXTENDED_INTERVAL_MINUTES,
+    MAX_SLOW_INTERVAL_MINUTES,
     MAX_SCAN_INTERVAL_MINUTES,
-    MIN_EXTENDED_INTERVAL_MINUTES,
+    MIN_SLOW_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
 )
 
@@ -242,12 +242,12 @@ class SuzukiConnectOptionsFlow(OptionsFlow):
                     default=options.get(CONF_ENABLE_EXTENDED, False),
                 ): bool,
                 vol.Required(
-                    CONF_EXTENDED_INTERVAL_MINUTES,
+                    CONF_SLOW_INTERVAL_MINUTES,
                     default=options.get(
-                        CONF_EXTENDED_INTERVAL_MINUTES, _minutes(DEFAULT_EXTENDED_INTERVAL)
+                        CONF_SLOW_INTERVAL_MINUTES, _minutes(DEFAULT_SLOW_INTERVAL)
                     ),
                 ): _minutes_slider(
-                    MIN_EXTENDED_INTERVAL_MINUTES, MAX_EXTENDED_INTERVAL_MINUTES, 30
+                    MIN_SLOW_INTERVAL_MINUTES, MAX_SLOW_INTERVAL_MINUTES, 30
                 ),
             }
         )

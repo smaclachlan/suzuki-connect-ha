@@ -46,7 +46,7 @@
           "scan_interval_minutes": "Live data poll interval",
           "enable_health": "Fetch vehicle health (extra API call, hourly)",
           "enable_extended": "Fetch trips, charging history, schedules and subscription (several extra API calls per refresh)",
-          "extended_interval_minutes": "Trips, charging history and schedules refresh interval"
+          "slow_interval_minutes": "Slow data refresh interval (vehicle list, trips, charging history, schedules)"
         }
       }
     }

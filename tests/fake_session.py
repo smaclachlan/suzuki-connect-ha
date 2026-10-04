@@ -141,6 +141,10 @@ class FakeBackend:
         self.valid_refresh.clear()
         return 200, self._mint()
 
+    def expire_access(self) -> None:
+        """The access token times out server-side; the refresh token still works."""
+        self.valid_access.clear()
+
     def evict(self) -> None:
         self.valid_access.clear()
         if not self.refresh_survives_eviction:

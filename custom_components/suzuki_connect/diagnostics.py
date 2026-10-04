@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant
 
 from . import SuzukiConfigEntry
 from .const import CONF_CONTRACT_ID, CONF_CONTRACT_IDS, CONF_DEVICE_ID
+from .pysuzukiconnect.auth import jwt_expiry
 
 REDACTED = "**REDACTED**"
 
@@ -56,6 +57,10 @@ def redact(value: Any) -> Any:
     return value
 
 
+def _round(value: float | None) -> int | None:
+    return round(value) if value is not None else None
+
+
 def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
@@ -90,10 +95,17 @@ async def async_get_config_entry_diagnostics(
         "auth": {
             "has_access_token": auth.access_token is not None,
             "access_token_valid": auth.token_valid,
+            # None: no known expiry, so the token is used until rejected.
             "access_token_expires_in_s": (
                 round(auth.token_expires_in)
                 if auth.token_expires_in is not None else None
             ),
+            "access_token_is_jwt_with_exp": jwt_expiry(auth.access_token) is not None,
+            "access_token_age_s": _round(auth.token_age),
+            # Evidence for the real token lifetime (expiresIn is not used).
+            "reported_expires_in": auth.reported_expires_in,
+            "tokens_rejected": auth.tokens_rejected,
+            "last_rejected_token_age_s": _round(auth.last_rejected_token_age),
             "has_refresh_token": auth.refresh_token is not None,
             "last_login": _iso(auth.last_login_at),
             "last_refresh": _iso(auth.last_refresh_at),

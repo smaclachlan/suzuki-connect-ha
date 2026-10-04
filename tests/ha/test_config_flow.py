@@ -11,7 +11,7 @@ from custom_components.suzuki_connect.const import (
     CONF_CONTRACT_IDS,
     CONF_ENABLE_EXTENDED,
     CONF_ENABLE_HEALTH,
-    CONF_EXTENDED_INTERVAL_MINUTES,
+    CONF_SLOW_INTERVAL_MINUTES,
     CONF_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
@@ -119,7 +119,7 @@ def _options_input(scan=15, extended=360) -> dict:
         CONF_SCAN_INTERVAL_MINUTES: scan,
         CONF_ENABLE_HEALTH: False,
         CONF_ENABLE_EXTENDED: True,
-        CONF_EXTENDED_INTERVAL_MINUTES: extended,
+        CONF_SLOW_INTERVAL_MINUTES: extended,
     }
 
 
@@ -135,7 +135,7 @@ async def test_options_defaults(hass):
         str(k): k.default() for k in result["data_schema"].schema
     }
     assert defaults[CONF_SCAN_INTERVAL_MINUTES] == 15
-    assert defaults[CONF_EXTENDED_INTERVAL_MINUTES] == 360
+    assert defaults[CONF_SLOW_INTERVAL_MINUTES] == 360
 
 
 async def test_options_store_ints(hass):
@@ -146,7 +146,7 @@ async def test_options_store_ints(hass):
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_SCAN_INTERVAL_MINUTES] == 1
-    assert result["data"][CONF_EXTENDED_INTERVAL_MINUTES] == 30
+    assert result["data"][CONF_SLOW_INTERVAL_MINUTES] == 30
     assert isinstance(result["data"][CONF_SCAN_INTERVAL_MINUTES], int)
 
 

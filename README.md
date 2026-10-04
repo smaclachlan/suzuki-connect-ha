@@ -130,16 +130,19 @@ Settings → the integration → **Configure**:
 - **Live data poll interval** — default 15 minutes, 1–240. This covers the
   live status (charge, range, locks, location, trip meter). 1–2 minutes
   roughly matches how often the car reports while driving and how often the
-  Suzuki app refreshes. Each poll is two API calls per account plus one per
-  car; Suzuki doesn't publish rate limits, so if polls start failing at a short
-  interval, raise it.
+  Suzuki app refreshes. Each poll is one API call per car. Like the app, the
+  access token is used until Suzuki rejects it, then refreshed (one extra
+  call). Suzuki doesn't publish rate limits, so if polls start failing at a
+  short interval, raise it.
 - **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
   fetched at most hourly (one extra API call per vehicle).
 - **Fetch trips, charging history, schedules and subscription** — off by
-  default. Adds the extended-data entities, refreshed on their own interval
-  (two calls for the account plus four per vehicle).
-- **Trips, charging history and schedules refresh interval** — default 6 hours,
-  30 minutes to 24 hours. Only used when the option above is on. Each part is fetched
+  default. Adds the extended-data entities, refreshed on the slow interval
+  below (two calls for the account plus four per vehicle).
+- **Slow data refresh interval** — default 6 hours, 30 minutes to 24 hours.
+  Covers the account's vehicle list (checked at startup, then on this
+  interval) and, when enabled, trips, charging history, schedules and
+  subscription. Each part is fetched
   separately; one that fails keeps its last value and never fails the poll.
   - *Last trip distance* has the trip's start, end, duration and average
     consumption as attributes; *Distance this month* has the trip count and

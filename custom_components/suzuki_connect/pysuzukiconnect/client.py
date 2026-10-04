@@ -137,10 +137,13 @@ class SuzukiConnectClient:
             headers=headers, json=json,
         )
 
-        # If the session was evicted mid-poll, the token is stale: re-auth once.
-        if status in (401, 403) and _retry:
+        # Tokens are used until rejected (see auth.py), so a 401 is the normal
+        # signal to refresh; it also means the phone may have evicted us.
+        # Re-auth and retry once.
+        if status in (401, 403):
             self._auth.invalidate(token)
-            return await self._authed_request(method, path, json=json, _retry=False)
+            if _retry:
+                return await self._authed_request(method, path, json=json, _retry=False)
 
         # Application errors in the body take precedence (they carry a code and
         # a readable message, and Suzuki sometimes sends them with odd statuses).

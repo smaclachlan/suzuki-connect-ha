@@ -12,7 +12,7 @@ CONF_DEVICE_NAME = "device_name"
 CONF_CONTRACT_IDS = "contract_ids"
 CONF_CONTRACT_ID = "contract_id"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
-CONF_EXTENDED_INTERVAL_MINUTES = "extended_interval_minutes"
+CONF_SLOW_INTERVAL_MINUTES = "slow_interval_minutes"
 # Opt-in extra endpoints (each makes additional API calls)
 CONF_ENABLE_HEALTH = "enable_health"
 CONF_ENABLE_EXTENDED = "enable_extended"
@@ -27,11 +27,11 @@ MIN_SCAN_INTERVAL_MINUTES = 1
 MAX_SCAN_INTERVAL_MINUTES = 240
 # Vehicle health changes rarely, so fetch it at most this often.
 HEALTH_REFRESH = timedelta(hours=1)
-# Trips, charging history, schedules and subscription: several API calls per
-# refresh and slow-changing, so on their own, longer interval.
-DEFAULT_EXTENDED_INTERVAL = timedelta(hours=6)
-MIN_EXTENDED_INTERVAL_MINUTES = 30
-MAX_EXTENDED_INTERVAL_MINUTES = 24 * 60
+# Slow path: the vehicle list, plus (when enabled) trips, charging history,
+# schedules and subscription. Slow-changing, so on their own, longer interval.
+DEFAULT_SLOW_INTERVAL = timedelta(hours=6)
+MIN_SLOW_INTERVAL_MINUTES = 30
+MAX_SLOW_INTERVAL_MINUTES = 24 * 60
 
 # Per-entry storage (persisted refresh token).
 STORAGE_VERSION = 1
