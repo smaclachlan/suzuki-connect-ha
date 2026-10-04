@@ -22,21 +22,32 @@ smart-charging alongside Ohme or Octopus).
 
 ## Features
 
-Each vehicle gets its own device with:
+Each vehicle gets its own device. Entity names start with their area, so
+related entities sit together on the device page (which lists them
+alphabetically):
 
-| Type | Entities |
+| Area | Entities |
 |---|---|
-| Sensors | State of charge, Range, Remaining charge time, Odometer, Trip meter, Last reported by car, Energy remaining, Energy to charge target |
-| Binary sensors | Charging, Charger connected, Door lock, Doors, Ignition, Climate active |
-| Device tracker | Location |
-| Numbers (settings) | Battery capacity, Charge target |
-| Diagnostics | Last polled, Telemetry age, Vehicle health (opt-in) |
-| Extended data (opt-in) | Last trip distance, Last trip end, Distance this month, Last charge, Subscription; Charge schedule and Climate schedule binary sensors |
+| Battery | Battery level, Battery range, Battery energy remaining, Battery energy to target |
+| Charging | Charging, Charging cable connected, Charging time remaining; *opt-in:* Charging last session, Charging schedule |
+| Climate | Climate active; *opt-in:* Climate schedule |
+| Doors & driving | Doors, Doors lock, Ignition, Location, Odometer |
+| Trips | Trip meter; *opt-in:* Trip last distance, Trip last end, Trip distance this month |
+| Configuration | Battery capacity, Charge target |
+| Diagnostic | Last reported by car, Last polled, Telemetry age; *opt-in:* Vehicle health, Subscription |
 
-Disabled by default (enable in the entity settings): Average consumption,
-Speed, individual climate states (A/C, preconditioning, defogger, defroster,
-seat and steering heaters) and body states (hazards, headlights, handbrake,
-seatbelt, bonnet, boot).
+*Opt-in* entities appear when the matching option is on (see [Options](#options)).
+
+Disabled by default (enable in the entity settings), under Diagnostic: Average
+consumption, Speed, individual climate states (Climate air conditioning,
+battery preconditioning, defogger, defroster, seat and steering wheel heater)
+and body states (hazard lights, headlights, handbrake, seatbelt, bonnet, boot).
+
+> [!NOTE]
+> **Upgrading from 0.1.x:** entities were renamed in 0.2.0 (e.g. *State of
+> charge* is now *Battery level*). Existing installs keep their entity IDs, so
+> automations and dashboards keep working; only the displayed names change.
+> New installs get IDs from the new names, e.g. `sensor.e_vitara_battery_level`.
 
 **Read-only.** Nothing this integration does changes anything on the car.
 
@@ -45,8 +56,8 @@ seatbelt, bonnet, boot).
 Suzuki doesn't report battery capacity, and e Vitara variants differ, so set
 **Battery capacity** (usable kWh) on the vehicle's device page. Then:
 
-- **Energy remaining** = state of charge × capacity.
-- **Energy to charge target** = (Charge target − state of charge) × capacity,
+- **Battery energy remaining** = battery level × capacity.
+- **Battery energy to target** = (Charge target − battery level) × capacity,
   never below zero. **Charge target** defaults to 80 %.
 
 Both stay *unknown* until capacity is set. These values are stored in Home
@@ -116,6 +127,14 @@ There are two separate clocks, and they can be hours apart:
   The car reports while it's awake; when it's parked and asleep, or out of
   mobile coverage, the cloud keeps serving the last values it has.
 
+> [!NOTE]
+> The Suzuki app's "Last updated" is **not** the car's report time: the app
+> shows the moment it fetched the data (its code ignores the car's timestamp).
+> It matches *Last polled*, not *Last reported by car*, so the app can say "a
+> minute ago" while the car's data is hours old. *Last reported by car* is
+> Suzuki's `lut` timestamp; its timezone and how often it changes are still
+> being confirmed (diagnostics include the raw value as `lut_raw`).
+
 **Telemetry age** (a diagnostic sensor) is the difference at the last poll.
 A recent *Last polled* with a large *Telemetry age* means polling is working
 but the car hasn't reported. The values are not current, even though they
@@ -150,13 +169,13 @@ Settings → the integration → **Configure**:
   interval) and, when enabled, trips, charging history, schedules and
   subscription. Each part is fetched
   separately; one that fails keeps its last value and never fails the poll.
-  - *Last trip distance* has the trip's start, end, duration and average
-    consumption as attributes; *Distance this month* has the trip count and
+  - *Trip last distance* has the trip's start, end, duration and average
+    consumption as attributes; *Trip distance this month* has the trip count and
     the app's monthly driving score and harsh acceleration/braking counts
     (account-wide).
-  - *Last charge* is when the latest charging session happened, with start
+  - *Charging last session* is when the latest charging session happened, with start
     and end charge level, duration, energy and AC/DC type as attributes.
-  - *Charge schedule* / *Climate schedule* are on when any schedule is
+  - *Charging schedule* / *Climate schedule* are on when any schedule is
     active, with every schedule's settings as attributes.
   - Trip and charging locations and driver names are never exposed.
   - These response formats come from the app's code and haven't been checked
@@ -178,15 +197,15 @@ that hasn't reported recently.
 alias: "e Vitara: send state of charge to Ohme"
 triggers:
   - trigger: state
-    entity_id: sensor.e_vitara_state_of_charge
+    entity_id: sensor.e_vitara_battery_level
   # Also when the car is plugged in, so Ohme has a value for planning.
   - trigger: state
-    entity_id: binary_sensor.e_vitara_charger_connected
+    entity_id: binary_sensor.e_vitara_charging_cable_connected
     to: "on"
 conditions:
   - condition: template
     value_template: >
-      {{ states('sensor.e_vitara_state_of_charge') | is_number }}
+      {{ states('sensor.e_vitara_battery_level') | is_number }}
   # Only send reasonably fresh data from the car.
   - condition: template
     value_template: >
@@ -196,12 +215,13 @@ actions:
     target:
       entity_id: number.ohme_home_pro_state_of_charge
     data:
-      value: "{{ states('sensor.e_vitara_state_of_charge') | int }}"
+      value: "{{ states('sensor.e_vitara_battery_level') | int }}"
 mode: queued
 ```
 
 The entity IDs are examples; replace them with your own (the Ohme one depends
-on your charger model). With the default 15-minute poll,
+on your charger model; installs from before 0.2.0 keep the older IDs, e.g.
+`sensor.e_vitara_state_of_charge`). With the default 15-minute poll,
 Ohme's value can lag the car by up to one poll interval plus the car's own
 reporting delay. This example hasn't yet been tested through a full charge.
 
@@ -228,7 +248,7 @@ session, and each live poll fetches every car's status one after another:
   and should be unaffected.
 
 If you have several cars, it would help to turn on extended data, check that
-each car's *Last trip distance* and *Distance this month* look right, and
+each car's *Trip last distance* and *Trip distance this month* look right, and
 [open an issue](https://github.com/smaclachlan/suzuki-connect-ha/issues) with
 what you see. **Download diagnostics** (credentials, VINs, contract ids and
 locations redacted) shows what Suzuki returned for each car.
@@ -250,13 +270,14 @@ locations redacted) shows what Suzuki returned for each car.
   - `charge_st` while charging (the integration treats any non-zero value as
     charging).
   - `chargerConnected_st`: only sent while plugged in. When it's missing,
-    *Charger connected* shows unknown rather than off.
+    *Charging cable connected* shows unknown rather than off.
   - The meaning of the vehicle-health status codes.
 - **Trip meter** is the car's `drv_km` value, assumed to be its resettable trip
   distance in km. Not yet confirmed.
 - **Extended data** (trips, charging history, schedules, subscription) is
   parsed from formats found in the app's code, not yet checked against a live
-  response. Energy in *Last charge* has no unit in the API and is assumed kWh.
+  response. Energy in *Charging last session* has no unit in the API and is
+  assumed kWh.
   In accounts with several cars, trips are matched to cars by contract id;
   see [Multiple cars](#multiple-cars).
 - **Not exposed yet:** geofences, alert settings and alert history. Endpoints

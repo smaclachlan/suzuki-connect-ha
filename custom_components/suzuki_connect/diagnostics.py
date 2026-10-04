@@ -13,6 +13,7 @@ from typing import Any
 
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from . import SuzukiConfigEntry
 from .const import CONF_CONTRACT_ID, CONF_CONTRACT_IDS, CONF_DEVICE_ID
@@ -73,6 +74,9 @@ async def async_get_config_entry_diagnostics(
     data = coordinator.data
 
     return {
+        # The integration reads the car's naive timestamps (lut) in this zone.
+        "ha_time_zone": hass.config.time_zone,
+        "ha_now": dt_util.now().isoformat(),
         "entry": {
             "data": redact(dict(entry.data)),
             "options": dict(entry.options),
@@ -123,6 +127,8 @@ def _vehicle_diagnostics(coordinator, contract_id: int, vdata) -> dict[str, Any]
     settings = coordinator.settings_for(contract_id)
     return {
         "telemetry": {
+            # Exactly as Suzuki sent it, to check its timezone and format.
+            "lut_raw": vdata.status.raw_meta.get("lut"),
             "last_reported_by_car": _iso(
                 coordinator.vehicle_time(vdata.status.last_updated)
             ),
@@ -134,6 +140,7 @@ def _vehicle_diagnostics(coordinator, contract_id: int, vdata) -> dict[str, Any]
         },
         "vehicle": redact(vdata.vehicle.raw),
         "status": redact(vdata.status.raw),
+        "dashboard": redact(vdata.status.raw_meta),
         "health": redact(vdata.health.raw) if vdata.health else None,
         "extended": _extended_diagnostics(vdata.extended),
     }

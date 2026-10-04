@@ -88,7 +88,7 @@ async def test_setup_creates_entities(hass, patch_session):
     entry = _entry()
     await _setup(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
     age = hass.states.get("sensor.e_vitara_telemetry_age")
     assert age is not None and float(age.state) >= 0
 
@@ -134,8 +134,8 @@ async def test_two_vehicles_one_login_two_devices(hass, patch_session):
 
     devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     assert sorted(d.name for d in devices) == ["SWIFT", "e VITARA"]
-    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
-    assert hass.states.get("sensor.swift_state_of_charge").state == "62"
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
+    assert hass.states.get("sensor.swift_battery_level").state == "62"
     assert hass.states.get("binary_sensor.swift_charging").state == "on"
 
 
@@ -153,8 +153,8 @@ async def test_one_vehicle_failing_keeps_the_other(hass, patch_session, freezer)
     # Contract ids are redacted from diagnostics, so must not appear here.
     assert "111111" not in coordinator.last_error
     # Last known values are kept for the failing car; the other updates.
-    assert hass.states.get("sensor.swift_state_of_charge").state == "62"
-    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
+    assert hass.states.get("sensor.swift_battery_level").state == "62"
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
 
     del backend.dashboards[999999]  # now both fail -> the poll fails
     await coordinator.async_refresh()
@@ -173,22 +173,22 @@ async def test_vehicle_failing_first_poll_still_gets_entities(hass, patch_sessio
 
     devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     assert sorted(d.name for d in devices) == ["SWIFT", "e VITARA"]
-    assert hass.states.get("sensor.swift_state_of_charge").state == "unavailable"
-    assert hass.states.get("sensor.swift_range").state == "unavailable"
+    assert hass.states.get("sensor.swift_battery_level").state == "unavailable"
+    assert hass.states.get("sensor.swift_battery_range").state == "unavailable"
     assert hass.states.get("binary_sensor.swift_charging").state == "unavailable"
     assert hass.states.get("device_tracker.swift_location").state == "unavailable"
-    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
 
     backend.dashboards[111111] = swift
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.swift_state_of_charge").state == "62"
+    assert hass.states.get("sensor.swift_battery_level").state == "62"
 
 
 async def test_energy_sensors_follow_capacity_and_target(hass, patch_session):
     entry = _entry()
     await _setup(hass, entry)
-    assert hass.states.get("sensor.e_vitara_energy_remaining").state == "unknown"
+    assert hass.states.get("sensor.e_vitara_battery_energy_remaining").state == "unknown"
     assert hass.states.get("number.e_vitara_charge_target").state == "80.0"
 
     await hass.services.async_call(
@@ -197,15 +197,15 @@ async def test_energy_sensors_follow_capacity_and_target(hass, patch_session):
         blocking=True,
     )
     # SoC 47 %: 61 * 0.47 = 28.7 kWh left; (80 - 47) % of 61 = 20.1 kWh to go.
-    assert hass.states.get("sensor.e_vitara_energy_remaining").state == "28.7"
-    assert hass.states.get("sensor.e_vitara_energy_to_charge_target").state == "20.1"
+    assert hass.states.get("sensor.e_vitara_battery_energy_remaining").state == "28.7"
+    assert hass.states.get("sensor.e_vitara_battery_energy_to_target").state == "20.1"
 
     await hass.services.async_call(
         "number", "set_value",
         {"entity_id": "number.e_vitara_charge_target", "value": 40},
         blocking=True,
     )
-    assert hass.states.get("sensor.e_vitara_energy_to_charge_target").state == "0.0"
+    assert hass.states.get("sensor.e_vitara_battery_energy_to_target").state == "0.0"
 
 
 async def test_settings_restored_after_restart(hass, patch_session):
@@ -223,7 +223,7 @@ async def test_settings_restored_after_restart(hass, patch_session):
     settings = entry.runtime_data.settings_for(999999)
     assert settings.battery_capacity == 49.0
     assert settings.charge_target == 90.0
-    assert hass.states.get("sensor.e_vitara_energy_to_charge_target").state == "21.1"
+    assert hass.states.get("sensor.e_vitara_battery_energy_to_target").state == "21.1"
 
 
 async def test_refresh_token_persisted(hass, hass_storage, patch_session, freezer):
@@ -349,8 +349,8 @@ async def test_trip_meter(hass, patch_session):
 
 async def test_extended_entities_only_when_enabled(hass, patch_session):
     await _setup(hass, _entry())
-    assert hass.states.get("sensor.e_vitara_last_trip_distance") is None
-    assert hass.states.get("binary_sensor.e_vitara_charge_schedule") is None
+    assert hass.states.get("sensor.e_vitara_trip_last_distance") is None
+    assert hass.states.get("binary_sensor.e_vitara_charging_schedule") is None
 
 
 async def test_extended_data(hass, patch_session, freezer):
@@ -361,25 +361,25 @@ async def test_extended_data(hass, patch_session, freezer):
     await _setup(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
 
-    trip = hass.states.get("sensor.e_vitara_last_trip_distance")
+    trip = hass.states.get("sensor.e_vitara_trip_last_distance")
     assert trip.state == "1042.5"
     assert trip.attributes["unit_of_measurement"] == "km"
     assert trip.attributes["duration_minutes"] == 72
     assert "latitude" not in json.dumps(dict(trip.attributes))
 
-    month = hass.states.get("sensor.e_vitara_distance_this_month")
+    month = hass.states.get("sensor.e_vitara_trip_distance_this_month")
     assert month.state == "1060.9"  # 18.4 + 1042.5; the other car's trip excluded
     assert month.attributes["trips"] == 2
     assert month.attributes["driving_score"] == 82
 
     # Car times are local to HA's timezone (US/Pacific in tests); states are UTC.
-    assert hass.states.get("sensor.e_vitara_last_trip_end").state == "2026-10-03T01:52:00+00:00"
-    charge = hass.states.get("sensor.e_vitara_last_charge")
+    assert hass.states.get("sensor.e_vitara_trip_last_end").state == "2026-10-03T01:52:00+00:00"
+    charge = hass.states.get("sensor.e_vitara_charging_last_session")
     assert charge.state == "2026-10-03T02:00:00+00:00"
     assert charge.attributes["end_level"] == 62
     assert hass.states.get("sensor.e_vitara_subscription").state == "Suzuki Connect Plus"
 
-    charge_sched = hass.states.get("binary_sensor.e_vitara_charge_schedule")
+    charge_sched = hass.states.get("binary_sensor.e_vitara_charging_schedule")
     assert charge_sched.state == "on"
     assert charge_sched.attributes["schedules"][0]["start_time"] == "00:30"
     assert hass.states.get("binary_sensor.e_vitara_climate_schedule").state == "off"
@@ -413,8 +413,8 @@ async def test_extended_failures_do_not_fail_the_poll(hass, patch_session, freez
     entry = _extended_entry()
     await _setup(hass, entry)
     assert entry.runtime_data.last_update_success
-    assert hass.states.get("sensor.e_vitara_last_charge").state == "unknown"
-    assert hass.states.get("sensor.e_vitara_last_trip_distance").state == "1042.5"
+    assert hass.states.get("sensor.e_vitara_charging_last_session").state == "unknown"
+    assert hass.states.get("sensor.e_vitara_trip_last_distance").state == "1042.5"
 
 
 async def test_extended_diagnostics_are_redacted(hass, patch_session, freezer):
@@ -479,7 +479,7 @@ async def test_failed_vehicle_list_refresh_uses_cache(hass, patch_session, freez
     freezer.tick(DEFAULT_SLOW_INTERVAL)
     await coordinator.async_refresh()
     assert coordinator.last_update_success
-    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
+    assert hass.states.get("sensor.e_vitara_battery_level").state == "47"
 
 
 async def test_token_diagnostics(hass, patch_session):
@@ -494,3 +494,42 @@ async def test_token_diagnostics(hass, patch_session):
     assert auth["access_token_is_jwt_with_exp"] is False
     assert auth["tokens_rejected"] == 1
     assert auth["last_rejected_token_age_s"] is not None
+
+
+async def test_upgrade_keeps_existing_entity_ids(hass, patch_session):
+    # Renaming entities only changes display names: an install from before
+    # the rename keeps its entity ids (and so its automations and history).
+    entry = _entry()
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "sensor", DOMAIN, "999999_state_of_charge",
+        suggested_object_id="e_vitara_state_of_charge", config_entry=entry,
+    )
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    state = hass.states.get("sensor.e_vitara_state_of_charge")
+    assert state.state == "47"
+    assert state.attributes["friendly_name"] == "e VITARA Battery level"
+    assert hass.states.get("sensor.e_vitara_battery_level") is None
+
+
+async def test_entity_sections(hass, patch_session):
+    await _setup(hass, _entry())
+    registry = er.async_get(hass)
+    category = lambda eid: registry.async_get(eid).entity_category  # noqa: E731
+    assert category("binary_sensor.e_vitara_doors") is None              # main sensors
+    assert category("sensor.e_vitara_last_reported_by_car") is not None  # diagnostic
+
+
+async def test_diagnostics_show_raw_timestamp_and_zone(hass, patch_session):
+    entry = _entry()
+    await _setup(hass, entry)
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag["ha_time_zone"] == hass.config.time_zone
+    vehicle = diag["vehicles"][0]
+    assert vehicle["telemetry"]["lut_raw"] == "2026-10-02 18:54:37"
+    dashboard = vehicle["dashboard"]
+    assert dashboard["lut"] == "2026-10-02 18:54:37"
+    assert "user_data" not in dashboard
+    assert "999999" not in json.dumps(dashboard)  # selectedContractId redacted

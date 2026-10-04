@@ -121,12 +121,12 @@ BINARY_SENSORS: tuple[SuzukiBinaryDescription, ...] = (
         value_fn=lambda s: s.steering_heater_on,
     ),
     # --- body states (verified on vehicle; opendoor_st is inverted) ---
-    # Doors enabled by default (security-relevant); the rest opt-in.
+    # Doors are a main sensor (security-relevant, next to Doors lock); the
+    # rest are opt-in diagnostics.
     SuzukiBinaryDescription(
         key="doors_open",
         translation_key="doors_open",
         device_class=BinarySensorDeviceClass.DOOR,
-        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda s: s.doors_open,
     ),
     SuzukiBinaryDescription(
