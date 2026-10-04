@@ -1,211 +1,187 @@
-# Suzuki Connect for Home Assistant
+<p align="center">
+  <img src="custom_components/suzuki_connect/brand/icon@2x.png" alt="Suzuki Connect" width="128">
+</p>
 
-Unofficial Home Assistant integration for **Suzuki Connect** (EU) electric
-vehicles — starting with the Suzuki e Vitara. It brings your car's state of
-charge, range, charging and lock status, odometer and location into Home
-Assistant so you can use them in dashboards and automations (for example,
-smart-charging alongside Ohme or Octopus).
+<h1 align="center">Suzuki Connect for Home Assistant</h1>
+
+<p align="center">
+  <a href="https://github.com/smaclachlan/suzuki-connect-ha/releases"><img src="https://img.shields.io/github/v/release/smaclachlan/suzuki-connect-ha?include_prereleases&style=flat-square" alt="Release"></a>
+  <a href="https://hacs.xyz/docs/faq/custom_repositories"><img src="https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square" alt="HACS custom repository"></a>
+  <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/Home%20Assistant-2024.12%2B-41BDF5?style=flat-square&logo=homeassistant&logoColor=white" alt="Home Assistant 2024.12+"></a>
+  <a href="https://github.com/smaclachlan/suzuki-connect-ha/actions/workflows/validate.yml"><img src="https://img.shields.io/github/actions/workflow/status/smaclachlan/suzuki-connect-ha/validate.yml?branch=main&style=flat-square&label=validate" alt="Validate"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/smaclachlan/suzuki-connect-ha?style=flat-square" alt="License"></a>
+</p>
+
+<p align="center">
+  Your Suzuki e Vitara's battery, charging, doors, location and trips in Home Assistant,<br>
+  via the Suzuki Connect (EU) cloud. Unofficial and read-only.
+</p>
+
+Please report problems in [issues](https://github.com/smaclachlan/suzuki-connect-ha/issues);
+pull requests are welcome.
 
 > [!IMPORTANT]
 > **Suzuki allows only one logged-in device per account.** When Home Assistant
-> signs in, your phone's Suzuki app is logged out, and vice versa. The
-> recommended setup is a **separate Suzuki account just for Home Assistant**:
-> invite it as a secondary driver from the main account in the Suzuki app, then
-> use that account here. See [One active session per account](#one-active-session-per-account).
+> signs in, the Suzuki app on your phone is logged out, and the other way round.
+> Use a **separate Suzuki account for Home Assistant**: invite it as a secondary
+> driver from your main account in the Suzuki app. See
+> [One session per account](#one-session-per-account).
 
-> **Unofficial / not affiliated.** This project is not affiliated with,
-> endorsed by, or supported by Suzuki. "Suzuki" and "Suzuki Connect" are
-> trademarks of their respective owners and are used here only to describe
-> compatibility. It talks to the same servers the official app uses, with your
-> own account; it may stop working if Suzuki changes their service, and using
-> it may be contrary to the app's terms of service. Use at your own risk.
+---
 
-## Features
+## Contents
 
-Each vehicle gets its own device. Entity names start with their area, so
-related entities sit together on the device page (which lists them
-alphabetically):
+- [Highlights](#highlights)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Entities](#entities)
+- [Trip and charging history](#trip-and-charging-history)
+- [How it works](#how-it-works)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Credits, license and disclaimer](#credits-license-and-disclaimer)
+
+## Highlights
+
+- **Battery and charging** — battery level, range, charging state, cable,
+  time remaining, and energy remaining / to your charge target.
+- **Doors and driving** — doors, lock, ignition, odometer, trip meter and
+  live location (device tracker).
+- **Trips and charging history** — browse every trip and charging session in
+  Home Assistant's Calendar, plus a recent-trips table for dashboards.
+- **Fast or gentle polling** — live data as often as every minute; slow-changing
+  data on its own longer interval.
+- **Careful with your session** — refreshes its token instead of logging in,
+  so it doesn't keep logging your phone out.
+- **Read-only** — nothing it does changes anything on the car.
+
+## Installation
+
+### HACS (recommended)
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=smaclachlan&repository=suzuki-connect-ha&category=integration)
+
+1. Click the button above, or in HACS go to **⋮ → Custom repositories** and add
+   `https://github.com/smaclachlan/suzuki-connect-ha` as an **Integration**.
+2. Download **Suzuki Connect**, then restart Home Assistant.
+
+To try pre-releases, turn on **Show beta versions** for this repository in
+HACS (⋮ → Redownload).
+
+### Manual
+
+Copy `custom_components/suzuki_connect/` into your Home Assistant
+`config/custom_components/` folder and restart.
+
+### Requirements
+
+- Home Assistant **2024.12** or newer.
+- A Suzuki Connect account with an active subscription, for a car on the
+  **EU** service.
+
+## Configuration
+
+[![Open your Home Assistant instance and start setting up Suzuki Connect.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=suzuki_connect)
+
+1. Click the button above, or go to **Settings → Devices & services → Add
+   integration → Suzuki Connect**.
+2. Sign in with your Suzuki Connect email and password.
+3. If the account has more than one car, choose which to add (EVs are
+   preselected). Each car becomes its own device.
+
+Each Suzuki account can be added once; its cars share one session and one
+poll. To change which cars are included, remove and re-add the integration.
+
+### Options
+
+**Settings → Devices & services → Suzuki Connect → Configure**:
+
+| Option | Default | Range | What it does |
+|---|---|---|---|
+| Live data poll interval | 15 min | 1–240 min | How often to fetch the live status (battery, charging, doors, location, trip meter). 1–2 min matches how often the car reports while driving. |
+| Fetch vehicle health | Off | | Adds a *Vehicle health* sensor, fetched at most hourly. |
+| Fetch trips, charging history, schedules and subscription | Off | | Adds the trip, charging-session and schedule entities and the [history calendars](#trip-and-charging-history). |
+| Slow data refresh interval | 6 h | 30 min–24 h | How often to refresh the car list and, if enabled, trips, charging history and schedules. |
+
+## Entities
+
+Each car is a device. Entity names start with their area, so related entities
+sit together on the device page:
 
 | Area | Entities |
 |---|---|
-| Battery | Battery level, Battery range, Battery energy remaining, Battery energy to target |
-| Charging | Charging, Charging cable connected, Charging time remaining; *opt-in:* Charging last session, Charging schedule |
-| Climate | Climate active; *opt-in:* Climate schedule |
-| Doors & driving | Doors, Doors lock, Ignition, Location, Odometer |
-| Trips | Trip meter; *opt-in:* Trip last distance, Trip last end, Trip distance this month |
-| Calendars (opt-in) | Trip history, Charging history (see [Trip and charging history](#trip-and-charging-history)) |
-| Configuration | Battery capacity, Charge target |
-| Diagnostic | Last reported by car, Last polled, Telemetry age; *opt-in:* Vehicle health, Subscription |
+| **Battery** | Battery level, Battery range, Battery energy remaining, Battery energy to target |
+| **Charging** | Charging, Charging cable connected, Charging time remaining · *extended:* Charging last session, Charging schedule |
+| **Climate** | Climate active · *extended:* Climate schedule |
+| **Doors and driving** | Doors, Doors lock, Ignition, Location, Odometer |
+| **Trips** | Trip meter · *extended:* Trip last distance, Trip last end, Trip distance this month |
+| **Calendars** | *extended:* Trip history, Charging history |
+| **Configuration** | Battery capacity, Charge target |
+| **Diagnostic** | Last reported by car, Last polled, Telemetry age · *options:* Vehicle health, Subscription |
 
-*Opt-in* entities appear when the matching option is on (see [Options](#options)).
+*Extended* entities appear when **Fetch trips, charging history, schedules and
+subscription** is on.
 
-Disabled by default (enable in the entity settings), under Diagnostic: Average
-consumption, Speed, individual climate states (Climate air conditioning,
-battery preconditioning, defogger, defroster, seat and steering wheel heater)
-and body states (hazard lights, headlights, handbrake, seatbelt, bonnet, boot).
+<details>
+<summary><b>Disabled by default</b> (enable them in the entity settings)</summary>
 
-> [!NOTE]
-> **Upgrading from 0.1.x:** entities were renamed in 0.2.0 (e.g. *State of
-> charge* is now *Battery level*). Existing installs keep their entity IDs, so
-> automations and dashboards keep working; only the displayed names change.
-> New installs get IDs from the new names, e.g. `sensor.e_vitara_battery_level`.
+Under Diagnostic: Average consumption, Speed, the individual climate states
+(Climate air conditioning, battery preconditioning, defogger, defroster, seat
+heater, steering wheel heater) and body states (Hazard lights, Headlights,
+Handbrake, Seatbelt, Bonnet, Boot).
 
-**Read-only.** Nothing this integration does changes anything on the car.
+</details>
+
+<details>
+<summary><b>Upgrading from 0.1.x</b>: entities were renamed</summary>
+
+In 0.2.0 entities were renamed so they group by area (e.g. *State of charge* is
+now *Battery level*). Existing installs keep their entity IDs, so automations
+and dashboards keep working; only the displayed names change. New installs get
+IDs from the new names, e.g. `sensor.e_vitara_battery_level`.
+
+</details>
 
 ### Energy sensors
 
 Suzuki doesn't report battery capacity, and e Vitara variants differ, so set
-**Battery capacity** (usable kWh) on the vehicle's device page. Then:
+**Battery capacity** (usable kWh) on the car's device page. Then:
 
 - **Battery energy remaining** = battery level × capacity.
 - **Battery energy to target** = (Charge target − battery level) × capacity,
-  never below zero. **Charge target** defaults to 80 %.
+  never below zero. **Charge target** defaults to 80%.
 
-Both stay *unknown* until capacity is set. These values are stored in Home
-Assistant only; they are not sent to the car or to Suzuki.
-
-## Requirements
-
-- Home Assistant 2024.12 or newer.
-- A Suzuki Connect account with an active subscription on an EU vehicle.
-
-## Installation (HACS)
-
-1. HACS → ⋮ → **Custom repositories** → add this repository's URL, category
-   **Integration**.
-2. Install **Suzuki Connect**, then restart Home Assistant.
-3. **Settings → Devices & Services → Add Integration → Suzuki Connect**, and
-   sign in with your Suzuki Connect email and password. If the account has
-   more than one vehicle you choose which to add (EVs are preselected); each
-   becomes its own device.
-
-(Manual install: copy `custom_components/suzuki_connect/` into your HA
-`config/custom_components/` and restart.)
-
-Each Suzuki account can be added once. All of its vehicles share one session
-and one poll. To change which vehicles are included, remove and re-add the
-integration.
-
-> [!NOTE]
-> **Multiple cars are untested.** The integration has only been tested on an
-> account with one car. Accounts with several cars should work, but see
-> [Multiple cars](#multiple-cars) for what to expect, and please open an issue
-> if something looks wrong.
-
-## One active session per account
-
-Suzuki allows only **one logged-in device per account** at a time. Signing in
-on one device logs the other out:
-
-- When Home Assistant signs in, the phone app is logged out.
-- When you open the app and sign in, Home Assistant loses its session until it
-  next reclaims it.
-
-To keep this to a minimum, the integration:
-
-- **Refreshes its token rather than logging in** wherever possible. Reads and
-  refreshes don't log the phone out; only a fresh login does.
-- **Saves its refresh token**, so restarting Home Assistant doesn't force a new
-  login.
-- **Reclaims a lost session at most once every 5 minutes.** If the app keeps
-  taking the session back, Home Assistant skips polls instead of the two
-  logging each other out in a loop. Skipped polls show as unavailable data,
-  not as a request to re-enter your password. With a short poll interval this
-  means up to 5 minutes of unavailable data each time the app takes over.
-
-**Recommended:** use a dedicated account for Home Assistant. In the Suzuki
-app, invite a second email address as a secondary driver, accept the
-invitation, and use that account here. Your own account then stays logged in on
-your phone.
-
-## Polling vs. how fresh the car's data is
-
-There are two separate clocks, and they can be hours apart:
-
-- **Last polled** — when Home Assistant last fetched data from Suzuki's cloud
-  successfully. This follows the poll interval (default 15 minutes).
-- **Last reported by car** — Suzuki's `lut` timestamp: the car's last
-  trip/park report (in practice, a few minutes after the ignition goes off).
-  It does **not** move while the car is parked and charging, even though the
-  battery level, range and charging time keep updating.
-
-> [!NOTE]
-> The Suzuki app's "Last updated" is **not** the car's report time: the app
-> shows the moment it fetched the data (its code ignores `lut`). It matches
-> *Last polled*, so the app can say "a minute ago" while *Last reported by car*
-> says hours.
-
-**Telemetry age** (a diagnostic sensor) is *Last polled* minus *Last reported by
-car*. It's a good sign of stale data when the car is parked and **not**
-charging; while it's charging it grows even though the charging values are
-current.
-
-Polling reads the cloud's cached data and does not appear to wake the car.
-While the car is awake (driving or charging) it reports about once a minute, so
-a short poll interval catches short trips and charging progress that a
-15-minute poll misses. While it's asleep, polling more often changes nothing.
-
-For automations, *Battery level* becoming unavailable already covers failed
-polls. Don't gate on *Telemetry age* while charging, for the reason above.
-
-## Options
-
-Settings → the integration → **Configure**:
-
-- **Live data poll interval** — default 15 minutes, 1–240. This covers the
-  live status (charge, range, locks, location, trip meter). 1–2 minutes
-  roughly matches how often the car reports while driving and how often the
-  Suzuki app refreshes. Each poll is one API call per car. Like the app, the
-  access token is used until Suzuki rejects it, then refreshed (one extra
-  call). Suzuki doesn't publish rate limits, so if polls start failing at a
-  short interval, raise it.
-- **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
-  fetched at most hourly (one extra API call per vehicle).
-- **Fetch trips, charging history, schedules and subscription** — off by
-  default. Adds the extended-data entities, refreshed on the slow interval
-  below (two calls for the account plus four per vehicle).
-- **Slow data refresh interval** — default 6 hours, 30 minutes to 24 hours.
-  Covers the account's vehicle list (checked at startup, then on this
-  interval) and, when enabled, trips, charging history, schedules and
-  subscription. Each part is fetched
-  separately; one that fails keeps its last value and never fails the poll.
-  - *Trip last distance* has the trip's start, end, duration and average
-    consumption as attributes; *Trip distance this month* has the trip count and
-    the app's monthly driving score and harsh acceleration/braking counts
-    (account-wide).
-  - *Charging last session* is when the latest charging session happened, with start
-    and end charge level, duration, energy and AC/DC type as attributes.
-  - *Charging schedule* / *Climate schedule* are on when any schedule is
-    active, with every schedule's settings as attributes.
-  - *Trip history* and *Charging history* calendars, and a recent-trips list;
-    see [Trip and charging history](#trip-and-charging-history).
-  - Trip and charging locations and driver names are never exposed.
-  - These response formats come from the app's code and haven't been checked
-    against a live car yet. If something looks wrong, **Download diagnostics**
-    includes the raw (redacted) responses.
+Both stay *unknown* until capacity is set. These two settings live in Home
+Assistant only; nothing is sent to the car or to Suzuki.
 
 ## Trip and charging history
 
 With extended data on, each car gets two calendars. Open **Calendar** in the
 sidebar to browse them:
 
-- **Trip history** — one event per trip: distance, duration and efficiency,
-  with battery used and odometer readings in the details. This and last
-  month are refreshed on the slow interval; when you browse to an older
-  month it's fetched once and kept (back to the account's first trip).
-- **Charging history** — one event per charging session: start → end level,
-  energy, duration and type. Suzuki only returns the latest few sessions, so
-  this fills in from when the integration started.
+| Calendar | One event per… | Shows |
+|---|---|---|
+| **Trip history** | trip | distance, duration and efficiency; battery used and odometer in the details |
+| **Charging history** | charging session | start → end level, energy, duration and type |
 
-Events appear after the trip or charge (on the next slow refresh), so use
-them for browsing, not as automation triggers.
+- Trips for this and last month refresh on the slow interval. Browse to an
+  older month and it's fetched once and kept, back to the account's first trip.
+- Suzuki only returns the latest few charging sessions, so *Charging history*
+  fills in from when the integration started.
+- Events appear after the trip or charge, so use them for browsing rather than
+  as automation triggers.
+- Locations are never included.
 
 ### Recent trips table
 
 *Trip last distance* has a `recent_trips` attribute with the last 10 trips
-(not stored in history, so it doesn't grow the database). To show them as a
-table, add a **Markdown** card to a dashboard (Edit dashboard → Add card →
-Markdown → Show code editor) and paste:
+(kept out of the history database). To show them as a table, add a
+**Markdown** card to a dashboard (**Edit dashboard → Add card → Markdown →
+Show code editor**) and paste:
+
+<details>
+<summary>Recent trips card (YAML)</summary>
 
 <!-- recent-trips-card -->
 ```yaml
@@ -221,22 +197,105 @@ content: |
 ```
 <!-- /recent-trips-card -->
 
-Replace the entity ID with your own: installs that started on 0.2.0b1 or
-b2 have `sensor.e_vitara_last_trip_distance`.
+Replace the entity ID with your own: installs that started on 0.2.0b1 or b2
+have `sensor.e_vitara_last_trip_distance`.
 
-## Example: send the state of charge to Ohme
+</details>
+
+It renders like this:
+
+| Date | Time | Distance | Duration | Efficiency | Battery |
+|:--|:--|--:|--:|--:|--:|
+| Sat 03 Oct | 17:40 | 42.6 miles | 51 min | 3.1 miles/kWh | 21% |
+| Sat 03 Oct | 08:15 | 12.4 miles | 24 min | 2.8 miles/kWh | 6% |
+
+## How it works
+
+### One session per account
+
+Suzuki allows **one logged-in device per account**. Signing in on one device
+logs the other out. To keep that to a minimum, the integration:
+
+- **Refreshes its token instead of logging in.** Reads and refreshes don't log
+  the phone out; only a full login does. Tokens last 4 minutes and are
+  refreshed shortly before they expire.
+- **Saves its tokens**, so restarting Home Assistant refreshes rather than
+  logging in again.
+- **Reclaims a lost session at most once every 5 minutes.** If the phone keeps
+  taking the session back, Home Assistant skips polls (data shows as
+  unavailable) instead of the two logging each other out in a loop. It never
+  asks you to re-enter your password for this.
+
+**Recommended:** a dedicated account for Home Assistant. In the Suzuki app,
+invite a second email address as a secondary driver, accept the invitation, and
+use that account here. Your own account stays logged in on your phone.
+
+### How fresh is the data?
+
+Two different clocks, which can be hours apart:
+
+| Sensor | Meaning |
+|---|---|
+| **Last polled** | When Home Assistant last fetched data from Suzuki. Follows the poll interval. This is what the Suzuki app calls "Last updated". |
+| **Last reported by car** | The car's last trip/park report (a few minutes after the ignition goes off). It doesn't move while the car is parked and charging, even though the charging values keep updating. |
+
+**Telemetry age** is the difference between the two. It flags stale data when
+the car is parked and *not* charging; while charging it grows even though the
+values are current, so don't use it to gate automations.
+
+Polling reads Suzuki's cloud and doesn't appear to wake the car. While the car
+is awake (driving or charging) it reports about once a minute, so a short poll
+interval catches short trips and charging progress; while it's asleep, polling
+more often changes nothing.
+
+### API usage
+
+| What | When | Calls |
+|---|---|---|
+| Live status | every live poll | 1 per car |
+| Token refresh | about every 3.5 minutes | 1 per account |
+| Car list | at startup, then each slow interval | 1 per account |
+| Trips, charging history, schedules (extended) | each slow interval | 2 per account + 3 per car |
+| Vehicle health (option) | hourly | 1 per car |
+| Older months of trips | when you browse to them in the calendar | 1 per month, once |
+
+One car at a 1-minute poll is about 1.3 calls a minute. Suzuki doesn't publish
+rate limits; if polls start failing at a short interval, raise it.
+
+<details>
+<summary><b>Multiple cars</b> (untested)</summary>
+
+Each selected car gets its own device. They share the account's session, and
+each live poll fetches every car's status in turn. If one car fails (for
+example, out of mobile coverage), it keeps its last values and the others still
+update; the poll only fails if every car fails.
+
+This has only been tested on an account with one car. In particular, trips
+come from an account-wide endpoint and are matched to cars by contract ID.
+Suzuki may only return trips for the car the account last "selected", in which
+case one car's trips could be missing (they're never credited to the wrong
+car). Charging history, schedules and health are fetched per car.
+
+If you have several cars, please turn on extended data, check each car's
+*Trip last distance* and *Trip distance this month*, and
+[open an issue](https://github.com/smaclachlan/suzuki-connect-ha/issues) with
+what you see and a diagnostics download.
+
+</details>
+
+## Examples
+
+<details>
+<summary><b>Send the battery level to Ohme</b> for smart charging</summary>
 
 The [Ohme integration](https://www.home-assistant.io/integrations/ohme/) can
-take the car's state of charge from Home Assistant, so Ohme's smart charging
-plans from the real battery level. Its state-of-charge entity is **disabled by
-default**: enable it on the Ohme device first.
-
-This automation copies the e Vitara's state of charge to Ohme whenever it
-changes. It skips stale readings, so Ohme isn't sent an old value from a car
-that hasn't reported recently.
+take the car's state of charge from Home Assistant, so Ohme plans charging
+from the real battery level. Its state-of-charge entity is **disabled by
+default**; enable it on the Ohme device first. This automation copies the
+battery level to Ohme whenever it changes, and when the car is plugged in:
 
 ```yaml
-alias: "e Vitara: send state of charge to Ohme"
+alias: "e Vitara: send battery level to Ohme"
 triggers:
   - trigger: state
     entity_id: sensor.e_vitara_battery_level
@@ -246,7 +305,6 @@ triggers:
     to: "on"
 conditions:
   # Unavailable (a failed poll) or unknown isn't a number, so it's skipped.
-  # No telemetry-age check: it keeps growing while the car charges.
   - condition: template
     value_template: >
       {{ states('sensor.e_vitara_battery_level') | is_number }}
@@ -259,79 +317,58 @@ actions:
 mode: queued
 ```
 
-The entity IDs are examples; replace them with your own (the Ohme one depends
-on your charger model; installs from before 0.2.0 keep the older IDs, e.g.
-`sensor.e_vitara_state_of_charge`). With the default 15-minute poll,
-Ohme's value can lag the car by up to one poll interval plus the car's own
-reporting delay. This example hasn't yet been tested through a full charge.
+Replace the entity IDs with your own. The Ohme one depends on your charger
+model; installs from before 0.2.0 have `sensor.e_vitara_state_of_charge` for
+the battery level. Ohme's value lags the car by up to one poll interval.
 
-## Multiple cars
-
-Each selected car gets its own device. All of them share the account's single
-session, and each live poll fetches every car's status one after another:
-
-- **API calls:** one per car per live poll (two cars at a 1-minute interval is
-  about two calls a minute). The vehicle list and token refresh are shared by
-  the account; extended data adds four calls per car on the slow interval.
-- **One car failing** (for example, out of mobile coverage) keeps that car's
-  last values and doesn't fail the poll; the poll only fails if every car
-  fails.
-
-**Not yet tested with more than one car.** In particular:
-
-- **Trips** come from an account-wide endpoint and are matched to each car by
-  the contract id on each trip. Suzuki may only return trips for the car the
-  account last "selected" (a `selectedContractId` appears in its responses),
-  in which case one car's trips could be missing. Trips are never credited to
-  the wrong car.
-- Charging history, schedules, subscription and health are fetched per car
-  and should be unaffected.
-
-If you have several cars, it would help to turn on extended data, check that
-each car's *Trip last distance* and *Trip distance this month* look right, and
-[open an issue](https://github.com/smaclachlan/suzuki-connect-ha/issues) with
-what you see. **Download diagnostics** (credentials, VINs, contract ids and
-locations redacted) shows what Suzuki returned for each car.
-
-## Known limitations
-
-- **EU accounts only** (`*.eur.connect.suzuki`). Other regions use different
-  backends.
-- **One session per account.** See above.
-- **Multiple cars are untested.** See [Multiple cars](#multiple-cars).
-- **Read-only.** Remote lock, climate and charging controls are not
-  implemented.
-- **Data is only as fresh as the car's last report.** See
-  [Polling vs. how fresh the car's data is](#polling-vs-how-fresh-the-cars-data-is).
-- **Timestamps.** *Last reported by car* (`lut`) is UTC. Trip and charging
-  times are local time without a zone and are read in Home Assistant's
-  timezone, so set that to the car's timezone.
-- **Unconfirmed values.** These have been seen only in some states, or not at
-  all on a live car, and may be wrong:
-  - `chargerConnected_st`: often missing, even while charging. While the car
-    is charging, *Charging cable connected* shows on; otherwise, when it's
-    missing, unknown rather than off.
-  - The meaning of the vehicle-health status codes.
-- **Trip meter** is the car's `drv_km` value, assumed to be its resettable trip
-  distance in km. Not yet confirmed.
-- **Extended data**: trips and charging history have been checked against a
-  live account; charge and climate schedules only with schedules switched off.
-  In accounts with several cars, trips are matched to cars by contract id;
-  see [Multiple cars](#multiple-cars).
-- **Not exposed yet:** geofences, alert settings and alert history. Endpoints
-  for these are listed in [docs/API.md](docs/API.md).
-- **Battery capacity** isn't reported by the API and must be entered by hand
-  for the energy sensors.
+</details>
 
 ## Troubleshooting
 
-Settings → the integration → ⋮ → **Download diagnostics** gives a report with
-poll timing and latency, the last error, token status and how old each car's
-data is. Email, password, tokens, VIN, contract IDs and location are redacted;
-check the file yourself before attaching it to an issue.
+**Download diagnostics**: **Settings → Devices & services → Suzuki Connect → ⋮
+→ Download diagnostics**. It includes poll timing, the last error, token
+status, how old each car's data is and the raw responses from Suzuki. Email,
+password, tokens, VIN, contract IDs, phone numbers and locations are redacted;
+still, check the file before attaching it to an issue.
 
-## Credits & license
+| Symptom | What to check |
+|---|---|
+| Your phone keeps getting logged out | Use a separate account for Home Assistant (see [One session per account](#one-session-per-account)). In diagnostics, `auth.forced_logins` should stay at 0–1. |
+| Data shows as unavailable for a few minutes | The phone app took the session; Home Assistant reclaims it within 5 minutes. |
+| *Last reported by car* is hours old | Normal while parked or charging; see [How fresh is the data?](#how-fresh-is-the-data) |
+| Energy sensors are *unknown* | Set **Battery capacity** on the device page. |
+| Trip or charging entities are missing | Turn on **Fetch trips, charging history, schedules and subscription** in the options. |
 
-Built by reverse-engineering the official Suzuki Connect EU app for
-interoperability with the owner's own vehicle data. Licensed under the Apache
-License 2.0 — see [LICENSE](LICENSE). API notes in [docs/API.md](docs/API.md).
+## Known limitations
+
+- **EU accounts only** (`*.eur.connect.suzuki`); other regions use different
+  services.
+- **Read-only**: remote lock, climate and charging controls aren't
+  implemented.
+- **One session per account**; see above.
+- **Multiple cars are untested**; see above.
+- **Battery capacity** isn't reported by Suzuki and has to be entered by hand.
+- **Timestamps**: *Last reported by car* is UTC. Trip and charging times come
+  without a timezone and are read in Home Assistant's timezone, so set that to
+  the car's.
+- **Not yet confirmed on a live car**: the trip meter (`drv_km`, assumed to be
+  the resettable trip distance in km), charge and climate schedules while
+  active, and the meaning of vehicle-health codes.
+- **Charging cable connected** is often missing from Suzuki's data. It shows
+  on while charging and unknown (not off) when Suzuki leaves it out.
+- **Not exposed yet**: geofences, alert settings and alert history. The
+  endpoints are listed in [docs/API.md](docs/API.md).
+
+## Credits, license and disclaimer
+
+Built by reverse-engineering the official Suzuki Connect EU app, for
+interoperability with the owner's own vehicle data. API notes are in
+[docs/API.md](docs/API.md). Licensed under the Apache License 2.0; see
+[LICENSE](LICENSE).
+
+> **Unofficial and not affiliated.** This project is not affiliated with,
+> endorsed by or supported by Suzuki. "Suzuki" and "Suzuki Connect" are
+> trademarks of their respective owners, used here only to describe
+> compatibility. It talks to the same servers as the official app, with your
+> own account; it may stop working if Suzuki changes their service, and using
+> it may be contrary to the app's terms of service. Use at your own risk.
