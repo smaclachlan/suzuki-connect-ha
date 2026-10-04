@@ -211,28 +211,25 @@ def test_jwt_expiry():
         assert auth_mod.jwt_expiry(token) is None
 
 
-async def test_jwt_exp_is_refreshed_before_it_expires(backend, clock):
+async def test_jwt_exp_is_not_acted_on(backend, clock):
+    # Refresh only on 401, even for a JWT past its exp; exp is diagnostic only.
     import time as real_time
-    tokens = iter([_jwt(real_time.time() + 600), _jwt(real_time.time() + 1200)])
+    token = _jwt(real_time.time() + 240)
 
     def login(call):
-        token = next(tokens)
         backend.valid_access.add(token)
         backend.valid_refresh.add("r")
-        if call["data"]["grant_type"] == "refresh_token":
-            backend.refreshes += 1
-        else:
-            backend.logins.append(call["data"]["override"])
+        backend.logins.append(call["data"]["override"])
         return 200, envelope(access_token=token, refresh_token="r", expiresIn=240)
 
     backend.session.route("POST", const.EP_LOGIN, login)
     client = _client(backend)
     await client.async_get_vehicles()
-    assert 500 < client.auth.token_expires_in <= 570
-    clock.now += 580  # inside the 30 s margin before exp
+    assert client.auth.token_expires_in is None
+    assert -245 < client.auth.token_seconds_past_exp < -235
+    clock.now += 3600
     await client.async_get_vehicles()
-    assert backend.refreshes == 1
-    assert client.auth.tokens_rejected == 0  # refreshed proactively, no 401
+    assert backend.refreshes == 0 and backend.logins == ["1"]
 
 
 async def test_concurrent_requests_share_one_login(backend, clock):

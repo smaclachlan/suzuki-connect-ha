@@ -111,6 +111,8 @@ async def async_get_config_entry_diagnostics(
             ),
             "access_token_is_jwt_with_exp": jwt_expiry(auth.access_token) is not None,
             "access_token_age_s": _round(auth.token_age),
+            # Positive: the token is still in use past its JWT exp.
+            "access_token_seconds_past_jwt_exp": _round(auth.token_seconds_past_exp),
             # Evidence for the real token lifetime (expiresIn is not used).
             "reported_expires_in": auth.reported_expires_in,
             "tokens_rejected": auth.tokens_rejected,
