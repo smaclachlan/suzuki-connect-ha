@@ -7,6 +7,7 @@ accessor tolerates missing keys.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 from typing import Any, Optional
@@ -57,7 +58,9 @@ def parse_timestamp(value: Any) -> Optional[datetime]:
     if value in (None, ""):
         return None
     text = str(value).strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M %p",
+    ):
         try:
             return datetime.strptime(text, fmt)
         except ValueError:
@@ -163,6 +166,7 @@ class VehicleStatus:
     boot_open: Optional[bool] = None
     location: Optional[tuple[float, float]] = field(default=None, repr=False)
     odometer: Optional[float] = None
+    trip_meter: Optional[float] = None   # drv_km; assumed a resettable trip (km)
     vehicle_speed: Optional[float] = None
     average_consumption: Optional[float] = None
     average_consumption_unit: Optional[str] = None
@@ -220,6 +224,7 @@ class VehicleStatus:
             boot_open=_bool_int(ud.get("trunkStatus")),
             location=_gps(ud.get("latestGPS") or ud.get("GPS")),
             odometer=_num(ud.get("mileage")),
+            trip_meter=_num(ud.get("drv_km")),
             vehicle_speed=_num(ud.get("vehicleSpeed")),
             average_consumption=_num(ud.get("averageConsumption")),
             average_consumption_unit=ud.get("averageConsumptionUnit"),
@@ -263,5 +268,304 @@ class VehicleHealth:
             drivable_advice=item.get("drivableAdvice") or None,
             failure_count=len(failures) if isinstance(failures, list) else None,
             last_updated=item.get("lastUpdatedTime") or None,
+            raw=data,
+        )
+
+
+# -- extended data ---------------------------------------------------------
+#
+# Driving history, charging history, schedules and subscription. Field names
+# come from the app's decompiled Gson models (see ../docs/API.md) and have not
+# yet been checked against live responses, so value formats (dates, durations,
+# units) are parsed leniently and anything unrecognised becomes None. Location
+# fields and driver names are deliberately not parsed.
+
+
+def _result_data(payload: Any) -> dict:
+    result = payload.get("result") if isinstance(payload, dict) else None
+    data = result.get("data") if isinstance(result, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def _dicts(value: Any) -> list[dict]:
+    return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
+
+
+def _flag(value: Any) -> Optional[bool]:
+    """A boolean that may arrive as bool, 0/1, "0"/"1", "Y"/"N" or "true"."""
+    if isinstance(value, bool):
+        return value
+    return _bool_yn(value)
+
+
+def _str(value: Any) -> Optional[str]:
+    return (str(value).strip() or None) if value is not None else None
+
+
+def parse_duration_minutes(value: Any) -> Optional[float]:
+    """Minutes from "H:MM", "H:MM:SS", "1h 20m"/"20 min", or a bare number
+    (taken as minutes)."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().lower()
+    if ":" in text:
+        parts = text.split(":")
+        try:
+            nums = [float(p) for p in parts]
+        except ValueError:
+            return None
+        if len(nums) == 2:
+            return nums[0] * 60 + nums[1]
+        if len(nums) == 3:
+            return nums[0] * 60 + nums[1] + nums[2] / 60
+        return None
+    hours = re.search(r"(\d+(?:\.\d+)?)\s*h", text)
+    mins = re.search(r"(\d+(?:\.\d+)?)\s*m", text)
+    if hours or mins:
+        return (float(hours.group(1)) * 60 if hours else 0.0) + (
+            float(mins.group(1)) if mins else 0.0
+        )
+    return _num(text)
+
+
+def _join_datetime(date: Any, time: Any) -> Optional[datetime]:
+    """Combine separate date and time fields (the time may also be a full
+    timestamp on its own). A date without a time gives None rather than a
+    misleading midnight."""
+    if time in (None, ""):
+        return None
+    full = parse_timestamp(time)  # a bare "HH:MM" never parses on its own
+    if full is not None:
+        return full
+    if date in (None, ""):
+        return None
+    return parse_timestamp(f"{str(date).strip()} {str(time).strip()}")
+
+
+@dataclass
+class Trip:
+    """One trip from the driving history. Positions are not kept."""
+
+    contract_id: Optional[int] = None
+    start: Optional[datetime] = None          # naive local time
+    end: Optional[datetime] = None
+    distance: Optional[float] = None
+    distance_unit: Optional[str] = None
+    duration_minutes: Optional[float] = None
+    average_consumption: Optional[float] = None
+    average_consumption_unit: Optional[str] = None
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_entry(cls, e: dict, trip_date: Any = None) -> "Trip":
+        return cls(
+            contract_id=_int(e.get("contractID")),
+            start=_join_datetime(e.get("startDate") or trip_date, e.get("startTime")),
+            end=_join_datetime(e.get("endDate") or trip_date, e.get("endTime")),
+            distance=_num(e.get("tripDistance")),
+            distance_unit=_str(e.get("tripDistanceUnit")),
+            duration_minutes=parse_duration_minutes(e.get("trip_duration")),
+            average_consumption=_num(e.get("avgConsumption")),
+            average_consumption_unit=_str(e.get("avgConsumptionUnit")),
+            raw=e,
+        )
+
+
+@dataclass
+class DrivingHistory:
+    """A month of trips (``GET /api/trip/drivingHistory/{yyyy-MM}``).
+
+    The endpoint is per account, not per vehicle; use ``for_contract``.
+    """
+
+    trips: list[Trip] = field(default_factory=list)   # newest first
+    driving_score: Optional[float] = None
+    harsh_acceleration_count: Optional[int] = None
+    harsh_braking_count: Optional[int] = None
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_response(cls, payload: Any) -> "DrivingHistory":
+        data = _result_data(payload)
+        trips = [
+            Trip.from_entry(t, day.get("tripDate"))
+            for day in _dicts(data.get("tripDetails"))
+            for t in _dicts(day.get("tripList"))
+        ]
+        report = data.get("driverReport")
+        report = report if isinstance(report, dict) else {}
+        return cls(
+            trips=_newest_first(trips),
+            driving_score=_num(report.get("drb_score")),
+            harsh_acceleration_count=_int(report.get("harsh_acc_count")),
+            harsh_braking_count=_int(report.get("harsh_break_count")),
+            raw=data,
+        )
+
+    def for_contract(self, contract_id: int, *, only_vehicle: bool) -> list[Trip]:
+        """Trips for one vehicle. Trips without a contract id are only
+        attributed when the account has a single selected vehicle."""
+        return [
+            t for t in self.trips
+            if t.contract_id == contract_id or (t.contract_id is None and only_vehicle)
+        ]
+
+    def merged(self, older: "DrivingHistory") -> "DrivingHistory":
+        """This month plus an earlier one (trips only; report stays this month's)."""
+        return DrivingHistory(
+            trips=_newest_first(self.trips + older.trips),
+            driving_score=self.driving_score,
+            harsh_acceleration_count=self.harsh_acceleration_count,
+            harsh_braking_count=self.harsh_braking_count,
+            raw=self.raw,
+        )
+
+
+def _newest_first(trips: list[Trip]) -> list[Trip]:
+    return sorted(trips, key=lambda t: t.end or t.start or datetime.min, reverse=True)
+
+
+@dataclass
+class ChargeSession:
+    """One entry of the charging history. The charging location is not kept."""
+
+    time: Optional[datetime] = None
+    duration_minutes: Optional[float] = None
+    start_level: Optional[int] = None          # %
+    end_level: Optional[int] = None            # %
+    energy: Optional[float] = None             # unit not reported
+    charge_type: Optional[str] = None
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_entry(cls, e: dict) -> "ChargeSession":
+        return cls(
+            time=parse_timestamp(e.get("chargeTime")),
+            duration_minutes=parse_duration_minutes(e.get("batteryChargedDuration")),
+            start_level=_int(e.get("batteryLevelAtStartCharge")),
+            end_level=_int(e.get("batteryLevelAtStopCharge")),
+            energy=_num(e.get("energyConsumption")),
+            charge_type=_str(e.get("chargeType")),
+            raw=e,
+        )
+
+
+@dataclass
+class ChargingHistory:
+    """``POST /api/v2/remoteCharge/charging_history``."""
+
+    sessions: list[ChargeSession] = field(default_factory=list)  # newest first
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_response(cls, payload: Any) -> "ChargingHistory":
+        data = _result_data(payload)
+        sessions = [ChargeSession.from_entry(e) for e in _dicts(data.get("chargingHistoryList"))]
+        # Keep the API's order when times don't parse; otherwise newest first.
+        if all(s.time is not None for s in sessions):
+            sessions.sort(key=lambda s: s.time, reverse=True)
+        return cls(sessions=sessions, raw=data)
+
+
+@dataclass
+class ChargeSchedule:
+    schedule_id: Optional[str] = None
+    active: Optional[bool] = None
+    ongoing: Optional[bool] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    days: Any = None
+    raw: dict = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class ClimateSchedule:
+    schedule_id: Optional[str] = None
+    active: Optional[bool] = None
+    time: Optional[str] = None
+    date: Optional[str] = None
+    days: Optional[str] = None
+    repeat: Optional[bool] = None
+    duration: Optional[str] = None
+    temperature: Optional[str] = None
+    raw: dict = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class Schedules:
+    """Charge schedules (``POST /api/v2/remoteCharge/getAllSchedules``) or
+    climate schedules (``GET /api/v2/climate_control_schedule/getAll/{id}``)."""
+
+    items: list = field(default_factory=list)
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @property
+    def any_active(self) -> Optional[bool]:
+        flags = [i.active for i in self.items if i.active is not None]
+        if not self.items:
+            return False
+        return any(flags) if flags else None
+
+    @classmethod
+    def charge_from_response(cls, payload: Any) -> "Schedules":
+        data = _result_data(payload)
+        return cls(
+            items=[
+                ChargeSchedule(
+                    schedule_id=_str(e.get("scheduleId")),
+                    active=_flag(e.get("isActive")),
+                    ongoing=_flag(e.get("isOngoing")),
+                    start_time=_str(e.get("StartTime")),
+                    end_time=_str(e.get("endTime")),
+                    days=e.get("notifyDays") or e.get("activeDay"),
+                    raw=e,
+                )
+                for e in _dicts(data.get("schedule"))
+            ],
+            raw=data,
+        )
+
+    @classmethod
+    def climate_from_response(cls, payload: Any) -> "Schedules":
+        data = _result_data(payload)
+        return cls(
+            items=[
+                ClimateSchedule(
+                    schedule_id=_str(e.get("reservation_id")),
+                    active=_flag(e.get("active")),
+                    time=_str(e.get("schedule_time")),
+                    date=_str(e.get("schedule_date")),
+                    days=_str(e.get("selected_days") or e.get("activeDay")),
+                    repeat=_flag(e.get("isRepeatSelected")),
+                    duration=_str(e.get("duration")),
+                    temperature=_str(e.get("temperature")),
+                    raw=e,
+                )
+                for e in _dicts(data.get("schedules"))
+            ],
+            raw=data,
+        )
+
+
+@dataclass
+class Subscription:
+    """``GET /api/subscription/getStatus/{contractId}``."""
+
+    plan_name: Optional[str] = None
+    plan_id: Optional[str] = None
+    status: Optional[int] = None   # code meanings unverified
+    raw: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_response(cls, payload: Any) -> "Subscription":
+        data = _result_data(payload)
+        details = data.get("subscriptionDetails")
+        details = details if isinstance(details, dict) else {}
+        return cls(
+            plan_name=_str(details.get("planName")),
+            plan_id=_str(details.get("planId")),
+            status=_int(details.get("subscriptionStatus")),
             raw=data,
         )

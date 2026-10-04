@@ -15,11 +15,14 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.suzuki_connect.const import (
     CONF_CONTRACT_ID,
+    CONF_ENABLE_EXTENDED,
     CONF_CONTRACT_IDS,
     CONF_DEVICE_ID,
     DOMAIN,
+    EXTENDED_REFRESH,
 )
 from custom_components.suzuki_connect.coordinator import TOKEN_SAVE_DELAY, storage_key
+from custom_components.suzuki_connect.pysuzukiconnect import const as api
 from custom_components.suzuki_connect.diagnostics import (
     async_get_config_entry_diagnostics,
 )
@@ -308,3 +311,119 @@ async def test_diagnostics_are_redacted(hass, patch_session):
     assert diag["polling"]["last_update_success"] is True
     assert diag["polling"]["last_latency_s"] is not None
     assert diag["auth"]["has_refresh_token"] is True
+
+
+def _extended_routes(backend) -> None:
+    """Serve the extended endpoints for 999999 (October 2026 trips only)."""
+    def ok(name):
+        def fn(call):
+            if not backend.authorised(call):
+                return 401, {}
+            return 200, load_fixture(name)
+        return fn
+    route = backend.session.route
+    route("GET", api.EP_DRIVING_HISTORY.format(month="2026-10"), ok("driving_history.json"))
+    route("POST", api.EP_CHARGING_HISTORY, ok("charging_history.json"))
+    route("POST", api.EP_CHARGE_SCHEDULES, ok("charge_schedules.json"))
+    route("GET", api.EP_CLIMATE_SCHEDULES.format(contract_id=999999),
+          ok("climate_schedules.json"))
+    route("GET", api.EP_SUBSCRIPTION.format(contract_id=999999), ok("subscription.json"))
+
+
+def _extended_entry() -> MockConfigEntry:
+    entry = _entry()
+    return MockConfigEntry(
+        domain=DOMAIN, title=entry.title, unique_id=EMAIL, version=1, minor_version=2,
+        data=dict(entry.data), options={CONF_ENABLE_EXTENDED: True},
+    )
+
+
+async def test_trip_meter(hass, patch_session):
+    await _setup(hass, _entry())
+    state = hass.states.get("sensor.e_vitara_trip_meter")
+    assert float(state.state) == 153
+    assert state.attributes["unit_of_measurement"] == "km"
+
+
+async def test_extended_entities_only_when_enabled(hass, patch_session):
+    await _setup(hass, _entry())
+    assert hass.states.get("sensor.e_vitara_last_trip_distance") is None
+    assert hass.states.get("binary_sensor.e_vitara_charge_schedule") is None
+
+
+async def test_extended_data(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
+
+    trip = hass.states.get("sensor.e_vitara_last_trip_distance")
+    assert trip.state == "1042.5"
+    assert trip.attributes["unit_of_measurement"] == "km"
+    assert trip.attributes["duration_minutes"] == 72
+    assert "latitude" not in json.dumps(dict(trip.attributes))
+
+    month = hass.states.get("sensor.e_vitara_distance_this_month")
+    assert month.state == "1060.9"  # 18.4 + 1042.5; the other car's trip excluded
+    assert month.attributes["trips"] == 2
+    assert month.attributes["driving_score"] == 82
+
+    # Car times are local to HA's timezone (US/Pacific in tests); states are UTC.
+    assert hass.states.get("sensor.e_vitara_last_trip_end").state == "2026-10-03T01:52:00+00:00"
+    charge = hass.states.get("sensor.e_vitara_last_charge")
+    assert charge.state == "2026-10-03T02:00:00+00:00"
+    assert charge.attributes["end_level"] == 62
+    assert hass.states.get("sensor.e_vitara_subscription").state == "Suzuki Connect Plus"
+
+    charge_sched = hass.states.get("binary_sensor.e_vitara_charge_schedule")
+    assert charge_sched.state == "on"
+    assert charge_sched.attributes["schedules"][0]["start_time"] == "00:30"
+    assert hass.states.get("binary_sensor.e_vitara_climate_schedule").state == "off"
+
+
+async def test_extended_data_is_fetched_rarely(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    calls = lambda: len(backend.session.calls_to(api.EP_CHARGING_HISTORY))  # noqa: E731
+    assert calls() == 1
+
+    await coordinator.async_refresh()
+    assert calls() == 1  # within EXTENDED_REFRESH: not fetched again
+    # Values from the earlier fetch are still there.
+    assert hass.states.get("sensor.e_vitara_subscription").state == "Suzuki Connect Plus"
+
+    freezer.tick(EXTENDED_REFRESH)
+    await coordinator.async_refresh()
+    assert calls() == 2
+
+
+async def test_extended_failures_do_not_fail_the_poll(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    backend = patch_session
+    _extended_routes(backend)
+    backend.session.route("POST", api.EP_CHARGING_HISTORY, lambda call: (500, {}))
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    assert entry.runtime_data.last_update_success
+    assert hass.states.get("sensor.e_vitara_last_charge").state == "unknown"
+    assert hass.states.get("sensor.e_vitara_last_trip_distance").state == "1042.5"
+
+
+async def test_extended_diagnostics_are_redacted(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    entry = _extended_entry()
+    await _setup(hass, entry)
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    extended = diag["vehicles"][0]["extended"]
+    assert extended["trips_parsed"] == 2
+    dumped = json.dumps(extended, default=str)
+    for secret in ("51.5", "-0.12", "Test Driver", "999999", "Services"):
+        assert secret not in dumped, secret
+    assert "tripDistance" in dumped  # shapes are still visible for mapping

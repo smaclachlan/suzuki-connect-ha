@@ -1,0 +1,16 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "contract_Id": "999999",
+      "subscriptionDetails": {
+        "planId": "P1",
+        "planName": "Suzuki Connect Plus",
+        "subscriptionStatus": 1,
+        "focStatus": 0
+      }
+    }
+  }
+}

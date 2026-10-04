@@ -15,6 +15,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import SuzukiConfigEntry
+from .const import CONF_ENABLE_EXTENDED
+from .coordinator import ExtendedData
 from .entity import SuzukiConnectEntity
 
 
@@ -176,17 +178,50 @@ BINARY_SENSORS: tuple[SuzukiBinaryDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class SuzukiScheduleDescription(BinarySensorEntityDescription):
+    """On when any schedule of this kind is active (opt-in extended data)."""
+
+    attr: str  # ExtendedData field holding the Schedules
+
+
+def _schedule_attrs(item) -> dict[str, Any]:
+    """A schedule's settings, minus the raw payload."""
+    return {k: v for k, v in vars(item).items() if k != "raw"}
+
+
+SCHEDULE_SENSORS: tuple[SuzukiScheduleDescription, ...] = (
+    SuzukiScheduleDescription(
+        key="charge_schedule",
+        translation_key="charge_schedule",
+        attr="charge_schedules",
+    ),
+    SuzukiScheduleDescription(
+        key="climate_schedule",
+        translation_key="climate_schedule",
+        attr="climate_schedules",
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SuzukiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[BinarySensorEntity] = [
         SuzukiConnectBinarySensor(coordinator, cid, d)
         for cid in coordinator.vehicles
         for d in BINARY_SENSORS
-    )
+    ]
+    if entry.options.get(CONF_ENABLE_EXTENDED):
+        entities.extend(
+            SuzukiScheduleBinarySensor(coordinator, cid, d)
+            for cid in coordinator.vehicles
+            for d in SCHEDULE_SENSORS
+        )
+    async_add_entities(entities)
 
 
 class SuzukiConnectBinarySensor(SuzukiConnectEntity, BinarySensorEntity):
@@ -201,3 +236,31 @@ class SuzukiConnectBinarySensor(SuzukiConnectEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return self.entity_description.value_fn(self._status)
+
+
+class SuzukiScheduleBinarySensor(SuzukiConnectEntity, BinarySensorEntity):
+    entity_description: SuzukiScheduleDescription
+
+    def __init__(
+        self, coordinator, contract_id: int, description: SuzukiScheduleDescription
+    ) -> None:
+        super().__init__(coordinator, contract_id, description.key)
+        self.entity_description = description
+
+    @property
+    def _schedules(self):
+        vdata = self._vehicle_data
+        ext: ExtendedData | None = vdata.extended if vdata else None
+        return getattr(ext, self.entity_description.attr) if ext else None
+
+    @property
+    def is_on(self) -> bool | None:
+        schedules = self._schedules
+        return schedules.any_active if schedules else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        schedules = self._schedules
+        if schedules is None:
+            return None
+        return {"schedules": [_schedule_attrs(i) for i in schedules.items]}

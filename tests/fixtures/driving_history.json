@@ -1,0 +1,74 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "fuelType": "EV",
+      "vehicleUnit": "km",
+      "vinGen": "G3",
+      "trackingID": 1234,
+      "driverReport": {
+        "drb_score": "82",
+        "harsh_acc_count": 3,
+        "harsh_break_count": 1,
+        "driverBehaviourDetails": []
+      },
+      "tripDetails": [
+        {
+          "tripDate": "2026-10-02",
+          "tripList": [
+            {
+              "contractID": 999999,
+              "tripDetailsID": 5001,
+              "startDate": "2026-10-02",
+              "startTime": "08:05",
+              "endDate": "2026-10-02",
+              "endTime": "08:31",
+              "tripDistance": "18.4",
+              "tripDistanceUnit": "km",
+              "trip_duration": "00:26",
+              "avgConsumption": "6.1",
+              "avgConsumptionUnit": "km/kWh",
+              "trip_driver_name": "Test Driver",
+              "USR_TIMEZONE": "Europe/London",
+              "startPosition": [{ "latitude": 51.5, "longitude": -0.12 }],
+              "endPosition": [{ "latitude": 51.6, "longitude": -0.2 }]
+            },
+            {
+              "contractID": 999999,
+              "tripDetailsID": 5002,
+              "startDate": "2026-10-02",
+              "startTime": "17:40",
+              "endDate": "2026-10-02",
+              "endTime": "18:52",
+              "tripDistance": "1,042.5",
+              "tripDistanceUnit": "km",
+              "trip_duration": "1:12",
+              "avgConsumption": "5.4",
+              "avgConsumptionUnit": "km/kWh",
+              "trip_driver_name": "Test Driver",
+              "startPosition": [{ "latitude": 51.6, "longitude": -0.2 }],
+              "endPosition": [{ "latitude": 51.5, "longitude": -0.12 }]
+            }
+          ]
+        },
+        {
+          "tripDate": "2026-10-01",
+          "tripList": [
+            {
+              "contractID": 111111,
+              "startDate": "2026-10-01",
+              "startTime": "09:00",
+              "endDate": "2026-10-01",
+              "endTime": "09:20",
+              "tripDistance": "12.0",
+              "tripDistanceUnit": "km",
+              "trip_duration": "20"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

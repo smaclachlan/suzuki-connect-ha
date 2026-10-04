@@ -15,6 +15,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .pysuzukiconnect import (
+    ChargingHistory,
+    DrivingHistory,
+    Schedules,
+    Subscription,
     SuzukiApiError,
     SuzukiConnectClient,
     SuzukiAuthError,
@@ -23,17 +27,19 @@ from .pysuzukiconnect import (
     VehicleHealth,
     VehicleStatus,
 )
-from .pysuzukiconnect.models import localize
+from .pysuzukiconnect.models import Trip, localize
 
 from .const import (
     CONF_CONTRACT_IDS,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
+    CONF_ENABLE_EXTENDED,
     CONF_ENABLE_HEALTH,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EXTENDED_REFRESH,
     HEALTH_REFRESH,
     STORAGE_VERSION,
 )
@@ -49,12 +55,26 @@ def storage_key(entry_id: str) -> str:
 
 
 @dataclass
+class ExtendedData:
+    """One vehicle's rarely-refreshed extra data; each part is None until it
+    has been fetched successfully once."""
+
+    trips: list[Trip] | None = None        # newest first, this and last month
+    driving: DrivingHistory | None = None  # account-level monthly report
+    charging: ChargingHistory | None = None
+    charge_schedules: Schedules | None = None
+    climate_schedules: Schedules | None = None
+    subscription: Subscription | None = None
+
+
+@dataclass
 class VehicleData:
     """One vehicle's latest snapshot."""
 
     vehicle: Vehicle
     status: VehicleStatus
     health: VehicleHealth | None = None
+    extended: ExtendedData | None = None
 
 
 @dataclass
@@ -107,6 +127,9 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self._enable_health = entry.options.get(CONF_ENABLE_HEALTH, False)
         self._health: dict[int, VehicleHealth] = {}
         self._health_at: dict[int, float] = {}
+        self._enable_extended = entry.options.get(CONF_ENABLE_EXTENDED, False)
+        self._extended: dict[int, ExtendedData] = {}
+        self._extended_at: float | None = None
         self.settings: dict[int, VehicleSettings] = {}
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, storage_key(entry.entry_id))
 
@@ -170,6 +193,9 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
                 result[cid] = VehicleData(vehicle=vehicle, status=status, health=health)
             if failures and len(failures) == len(selected):
                 raise SuzukiApiError("; ".join(failures))
+            await self._maybe_fetch_extended(list(result))
+            for cid, vdata in result.items():
+                vdata.extended = self._extended.get(cid)
         except SuzukiAuthError as err:
             self._record_failure(err)
             # Credentials no longer work (the client already retries with a
@@ -228,6 +254,65 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         if reported is None:
             return None
         return max(timedelta(0), self.last_polled - reported)
+
+    async def _maybe_fetch_extended(self, contract_ids: list[int]) -> None:
+        """Fetch trips, charging history, schedules and subscription when opted
+        in, at most every EXTENDED_REFRESH.
+
+        Each part is fetched independently: a failure (e.g. an endpoint the
+        car's plan doesn't offer) keeps that part's last value and never fails
+        the poll.
+        """
+        if not self._enable_extended or not contract_ids:
+            return
+        now = time.monotonic()
+        if (
+            self._extended_at is not None
+            and now - self._extended_at < EXTENDED_REFRESH.total_seconds()
+        ):
+            return
+        succeeded = False
+
+        async def fetch(label: str, call):
+            nonlocal succeeded
+            try:
+                value = await call
+            except SuzukiConnectError as err:
+                _LOGGER.debug("Fetching %s failed: %s", label, err)
+                return None
+            succeeded = True
+            return value
+
+        history = await self._fetch_trips(fetch)
+        for cid in contract_ids:
+            ext = self._extended.setdefault(cid, ExtendedData())
+            if history is not None:
+                ext.driving = history
+                ext.trips = history.for_contract(cid, only_vehicle=len(contract_ids) == 1)
+            for attr, label, call in (
+                ("charging", "charging history", self.client.async_get_charging_history),
+                ("charge_schedules", "charge schedules", self.client.async_get_charge_schedules),
+                ("climate_schedules", "climate schedules", self.client.async_get_climate_schedules),
+                ("subscription", "subscription", self.client.async_get_subscription),
+            ):
+                value = await fetch(label, call(cid))
+                if value is not None:
+                    setattr(ext, attr, value)
+        # If everything failed (e.g. a transient outage), try again next poll.
+        if succeeded:
+            self._extended_at = now
+
+    async def _fetch_trips(self, fetch) -> DrivingHistory | None:
+        """This month's trips plus last month's, so the latest trip survives
+        the start of a new month."""
+        today = dt_util.now().date()
+        this_month = today.strftime("%Y-%m")
+        last_month = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+        current = await fetch("driving history", self.client.async_get_driving_history(this_month))
+        previous = await fetch("driving history", self.client.async_get_driving_history(last_month))
+        if current is None:
+            return None
+        return current.merged(previous) if previous is not None else current
 
     async def _maybe_fetch_health(self, contract_id: int) -> VehicleHealth | None:
         """Fetch vehicle health only when opted in, and no more than HEALTH_REFRESH."""

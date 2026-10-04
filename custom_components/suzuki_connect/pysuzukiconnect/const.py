@@ -24,6 +24,12 @@ EP_VEHICLE_DETAILS = "/api/profile/vehicleDetailsAuth"
 EP_DASHBOARD = "/api/dashboard/dashboardOauth"
 EP_VEHICLE_HEALTH = "/api/dashboard/vehicleHealthStatus/{contract_id}"
 EP_LOGOUT = "/api/logout"
+# Extended data (request formats from the decompiled app; see docs/API.md)
+EP_DRIVING_HISTORY = "/api/trip/drivingHistory/{month}"   # month: yyyy-MM
+EP_CHARGING_HISTORY = "/api/v2/remoteCharge/charging_history"
+EP_CHARGE_SCHEDULES = "/api/v2/remoteCharge/getAllSchedules"
+EP_CLIMATE_SCHEDULES = "/api/v2/climate_control_schedule/getAll/{contract_id}"
+EP_SUBSCRIPTION = "/api/subscription/getStatus/{contract_id}"
 
 # grant types / login
 GRANT_PASSWORD = "password"

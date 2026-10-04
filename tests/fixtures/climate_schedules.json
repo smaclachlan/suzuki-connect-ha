@@ -1,0 +1,21 @@
+{
+  "errors": [],
+  "result": {
+    "message": "",
+    "title": "",
+    "data": {
+      "schedules": [
+        {
+          "reservation_id": "12",
+          "active": "N",
+          "schedule_time": "07:45",
+          "schedule_date": "2026-10-05",
+          "selected_days": "1,2,3,4,5",
+          "isRepeatSelected": "Y",
+          "duration": "15",
+          "temperature": "21"
+        }
+      ]
+    }
+  }
+}
