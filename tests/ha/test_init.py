@@ -18,8 +18,10 @@ from custom_components.suzuki_connect.const import (
     CONF_ENABLE_EXTENDED,
     CONF_CONTRACT_IDS,
     CONF_DEVICE_ID,
+    CONF_SLOW_INTERVAL_MINUTES,
+    CONF_SCAN_INTERVAL_MINUTES,
+    DEFAULT_SLOW_INTERVAL,
     DOMAIN,
-    EXTENDED_REFRESH,
 )
 from custom_components.suzuki_connect.coordinator import TOKEN_SAVE_DELAY, storage_key
 from custom_components.suzuki_connect.pysuzukiconnect import const as api
@@ -330,11 +332,11 @@ def _extended_routes(backend) -> None:
     route("GET", api.EP_SUBSCRIPTION.format(contract_id=999999), ok("subscription.json"))
 
 
-def _extended_entry() -> MockConfigEntry:
+def _extended_entry(**options) -> MockConfigEntry:
     entry = _entry()
     return MockConfigEntry(
         domain=DOMAIN, title=entry.title, unique_id=EMAIL, version=1, minor_version=2,
-        data=dict(entry.data), options={CONF_ENABLE_EXTENDED: True},
+        data=dict(entry.data), options={CONF_ENABLE_EXTENDED: True, **options},
     )
 
 
@@ -394,11 +396,11 @@ async def test_extended_data_is_fetched_rarely(hass, patch_session, freezer):
     assert calls() == 1
 
     await coordinator.async_refresh()
-    assert calls() == 1  # within EXTENDED_REFRESH: not fetched again
+    assert calls() == 1  # within the extended interval: not fetched again
     # Values from the earlier fetch are still there.
     assert hass.states.get("sensor.e_vitara_subscription").state == "Suzuki Connect Plus"
 
-    freezer.tick(EXTENDED_REFRESH)
+    freezer.tick(DEFAULT_SLOW_INTERVAL)
     await coordinator.async_refresh()
     assert calls() == 2
 
@@ -427,3 +429,68 @@ async def test_extended_diagnostics_are_redacted(hass, patch_session, freezer):
     for secret in ("51.5", "-0.12", "Test Driver", "999999", "Services"):
         assert secret not in dumped, secret
     assert "tripDistance" in dumped  # shapes are still visible for mapping
+
+
+async def test_poll_intervals_from_options(hass, patch_session, freezer):
+    freezer.move_to("2026-10-04 12:00:00+01:00")
+    _extended_routes(patch_session)
+    entry = _extended_entry(
+        **{CONF_SCAN_INTERVAL_MINUTES: 1, CONF_SLOW_INTERVAL_MINUTES: 30}
+    )
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    assert coordinator.update_interval.total_seconds() == 60
+
+    calls = lambda: len(patch_session.session.calls_to(api.EP_CHARGING_HISTORY))  # noqa: E731
+    assert calls() == 1
+    freezer.tick(29 * 60)
+    await coordinator.async_refresh()
+    assert calls() == 1
+    freezer.tick(60)
+    await coordinator.async_refresh()
+    assert calls() == 2
+
+
+async def test_vehicle_list_is_on_the_slow_path(hass, patch_session, freezer):
+    backend = patch_session
+    entry = _entry()
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    vehicle_calls = lambda: len(backend.session.calls_to(api.EP_VEHICLE_DETAILS))  # noqa: E731
+    dashboard_calls = lambda: len(backend.session.calls_to(api.EP_DASHBOARD))  # noqa: E731
+    assert (vehicle_calls(), dashboard_calls()) == (1, 1)
+
+    for _ in range(3):  # live polls: dashboard only
+        freezer.tick(60)
+        await coordinator.async_refresh()
+    assert (vehicle_calls(), dashboard_calls()) == (1, 4)
+
+    freezer.tick(DEFAULT_SLOW_INTERVAL)
+    await coordinator.async_refresh()
+    assert vehicle_calls() == 2
+
+
+async def test_failed_vehicle_list_refresh_uses_cache(hass, patch_session, freezer):
+    backend = patch_session
+    entry = _entry()
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data
+    backend.session.route("GET", api.EP_VEHICLE_DETAILS, lambda call: (503, {}))
+    freezer.tick(DEFAULT_SLOW_INTERVAL)
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success
+    assert hass.states.get("sensor.e_vitara_state_of_charge").state == "47"
+
+
+async def test_token_diagnostics(hass, patch_session):
+    backend = patch_session
+    entry = _entry()
+    await _setup(hass, entry)
+    backend.expire_access()
+    await entry.runtime_data.async_refresh()
+    auth = (await async_get_config_entry_diagnostics(hass, entry))["auth"]
+    assert auth["reported_expires_in"] == 240
+    assert auth["access_token_expires_in_s"] is None  # used until rejected
+    assert auth["access_token_is_jwt_with_exp"] is False
+    assert auth["tokens_rejected"] == 1
+    assert auth["last_rejected_token_age_s"] is not None

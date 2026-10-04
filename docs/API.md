@@ -50,6 +50,14 @@ Returns `SignInResponse` containing a JWT (stored as `key_jwt_token`) and a
 Same endpoint, `grant_type=refresh_token`, plus `access_token`, `refresh_token`,
 `mailID`, `client_id`, `client_secret`, and the same device fields.
 
+### Token lifetime
+The login and refresh responses include `expiresIn` (observed `240`), but the
+app never reads it. Its OkHttp `Authenticator` (`jc/C2989j`) refreshes with
+`grant_type=refresh_token` only when a call returns **401**, then retries. The
+integration does the same; it also refreshes a little early if the access
+token is a JWT with an `exp` claim. Diagnostics record the age of each token
+when it was rejected, so the real lifetime can be observed.
+
 ### Authorization
 A request interceptor adds `Authorization: Bearer <JWT>` to **every** call except
 the login/token endpoint. Reads need nothing more.
@@ -115,7 +123,7 @@ Login additionally has top-level `access_token`, `refresh_token`, `expiresIn`.
 **Login** (`/api/sconnectapp/login/token`):
 - `access_token` — the JWT (top level)
 - `refresh_token` — (top level)
-- `expiresIn` — observed `240`. **Units unconfirmed** (240 s = 4 min, or 240 min).
+- `expiresIn` — observed `240`. Units unknown, and unused: the app refreshes on 401 instead (see *Token lifetime*).
 - `result.data.USER_DETAILS.DEFAULT_CONTRACT_ID` — the account's default vehicle
 - `result.data.VEHICLE_DATA.{PRIMARY_VEHICLE_LIST,SECONDARY_VEHICLE_LIST}` — each
   vehicle has `CONTRACT_ID`, `FUEL_TYPE` (`EV`), `BrandCode` (`e VITARA`),
@@ -226,7 +234,7 @@ obtained from one login capture (the app has no certificate pinning).
 0. ~~Session force mechanism~~ — DONE: `override=1` forces login (confirmed 200).
    **Still open:** does a `refresh_token` keep working after the phone evicts the
    session? Decides whether refresh-only polling can coexist with the phone.
-0. `expiresIn` units (240 s vs min) → refresh cadence.
+0. ~~`expiresIn` units~~ — moot: the app ignores it and refreshes on 401. Real token lifetime to be observed via diagnostics.
 2. Exact nesting of `SignInResponse` (where JWT + refresh token sit) and
    `DashBoardResponse.result` (the `currentChargeLevel` path).
 3. Whether `dashboardOauth` returns a cached last-known value or triggers a

@@ -74,6 +74,12 @@ Each Suzuki account can be added once. All of its vehicles share one session
 and one poll. To change which vehicles are included, remove and re-add the
 integration.
 
+> [!NOTE]
+> **Multiple cars are untested.** The integration has only been tested on an
+> account with one car. Accounts with several cars should work, but see
+> [Multiple cars](#multiple-cars) for what to expect, and please open an issue
+> if something looks wrong.
+
 ## One active session per account
 
 Suzuki allows only **one logged-in device per account** at a time. Signing in
@@ -92,7 +98,8 @@ To keep this to a minimum, the integration:
 - **Reclaims a lost session at most once every 5 minutes.** If the app keeps
   taking the session back, Home Assistant skips polls instead of the two
   logging each other out in a loop. Skipped polls show as unavailable data,
-  not as a request to re-enter your password.
+  not as a request to re-enter your password. With a short poll interval this
+  means up to 5 minutes of unavailable data each time the app takes over.
 
 **Recommended:** use a dedicated account for Home Assistant. In the Suzuki
 app, invite a second email address as a secondary driver, accept the
@@ -114,8 +121,10 @@ A recent *Last polled* with a large *Telemetry age* means polling is working
 but the car hasn't reported. The values are not current, even though they
 updated.
 
-Polling reads the cloud's cached data and does not appear to wake the car, so
-polling more often won't make the data fresher.
+Polling reads the cloud's cached data and does not appear to wake the car.
+While the car is awake (driving or charging) it reports about once a minute, so
+a short poll interval catches short trips and charging progress that a
+15-minute poll misses. While it's asleep, polling more often changes nothing.
 
 For automations that act on state of charge, check freshness first, for
 example `{{ states('sensor.e_vitara_telemetry_age') | float(9999) < 60 }}`.
@@ -124,12 +133,22 @@ example `{{ states('sensor.e_vitara_telemetry_age') | float(9999) < 60 }}`.
 
 Settings → the integration → **Configure**:
 
-- **Poll interval** — default 15 minutes, allowed 5–240.
+- **Live data poll interval** — default 15 minutes, 1–240. This covers the
+  live status (charge, range, locks, location, trip meter). 1–2 minutes
+  roughly matches how often the car reports while driving and how often the
+  Suzuki app refreshes. Each poll is one API call per car. Like the app, the
+  access token is used until Suzuki rejects it, then refreshed (one extra
+  call). Suzuki doesn't publish rate limits, so if polls start failing at a
+  short interval, raise it.
 - **Fetch vehicle health** — off by default. Adds a Vehicle health sensor,
   fetched at most hourly (one extra API call per vehicle).
 - **Fetch trips, charging history, schedules and subscription** — off by
-  default. Adds the extended-data entities, refreshed at most every 6 hours
-  (two calls for the account plus four per vehicle). Each part is fetched
+  default. Adds the extended-data entities, refreshed on the slow interval
+  below (two calls for the account plus four per vehicle).
+- **Slow data refresh interval** — default 6 hours, 30 minutes to 24 hours.
+  Covers the account's vehicle list (checked at startup, then on this
+  interval) and, when enabled, trips, charging history, schedules and
+  subscription. Each part is fetched
   separately; one that fails keeps its last value and never fails the poll.
   - *Last trip distance* has the trip's start, end, duration and average
     consumption as attributes; *Distance this month* has the trip count and
@@ -186,11 +205,40 @@ on your charger model). With the default 15-minute poll,
 Ohme's value can lag the car by up to one poll interval plus the car's own
 reporting delay. This example hasn't yet been tested through a full charge.
 
+## Multiple cars
+
+Each selected car gets its own device. All of them share the account's single
+session, and each live poll fetches every car's status one after another:
+
+- **API calls:** one per car per live poll (two cars at a 1-minute interval is
+  about two calls a minute). The vehicle list and token refresh are shared by
+  the account; extended data adds four calls per car on the slow interval.
+- **One car failing** (for example, out of mobile coverage) keeps that car's
+  last values and doesn't fail the poll; the poll only fails if every car
+  fails.
+
+**Not yet tested with more than one car.** In particular:
+
+- **Trips** come from an account-wide endpoint and are matched to each car by
+  the contract id on each trip. Suzuki may only return trips for the car the
+  account last "selected" (a `selectedContractId` appears in its responses),
+  in which case one car's trips could be missing. Trips are never credited to
+  the wrong car.
+- Charging history, schedules, subscription and health are fetched per car
+  and should be unaffected.
+
+If you have several cars, it would help to turn on extended data, check that
+each car's *Last trip distance* and *Distance this month* look right, and
+[open an issue](https://github.com/smaclachlan/suzuki-connect-ha/issues) with
+what you see. **Download diagnostics** (credentials, VINs, contract ids and
+locations redacted) shows what Suzuki returned for each car.
+
 ## Known limitations
 
 - **EU accounts only** (`*.eur.connect.suzuki`). Other regions use different
   backends.
 - **One session per account.** See above.
+- **Multiple cars are untested.** See [Multiple cars](#multiple-cars).
 - **Read-only.** Remote lock, climate and charging controls are not
   implemented.
 - **Data is only as fresh as the car's last report.** See
@@ -209,7 +257,8 @@ reporting delay. This example hasn't yet been tested through a full charge.
 - **Extended data** (trips, charging history, schedules, subscription) is
   parsed from formats found in the app's code, not yet checked against a live
   response. Energy in *Last charge* has no unit in the API and is assumed kWh.
-  In accounts with several cars, trips are matched to cars by contract id.
+  In accounts with several cars, trips are matched to cars by contract id;
+  see [Multiple cars](#multiple-cars).
 - **Not exposed yet:** geofences, alert settings and alert history. Endpoints
   for these are listed in [docs/API.md](docs/API.md).
 - **Battery capacity** isn't reported by the API and must be entered by hand

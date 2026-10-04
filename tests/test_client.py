@@ -143,7 +143,7 @@ async def test_refresh_server_error_keeps_refresh_token(backend, clock):
     client = _client(backend)
     await client.async_get_vehicles()
     refresh_token = client.auth.refresh_token
-    clock.now += 600  # access token expired
+    backend.expire_access()
 
     real_login = backend.session.routes[("POST", const.EP_LOGIN)]
     backend.session.route(
@@ -180,15 +180,59 @@ async def test_bad_password_is_auth_error(backend, clock):
 
 # -- token lifecycle ------------------------------------------------------------
 
-async def test_token_reused_until_expiry_then_refreshed(backend, clock):
+async def test_token_used_until_rejected_then_refreshed(backend, clock):
+    # Like the official app: expiresIn is ignored and the token is refreshed
+    # only when the server rejects it.
     client = _client(backend)
     await client.async_get_vehicles()
+    clock.now += 4 * 3600  # far beyond expiresIn=240, whatever its units
     await client.async_get_vehicles()
     assert backend.logins == ["1"] and backend.refreshes == 0
+    assert client.auth.reported_expires_in == 240
+    assert client.auth.token_expires_in is None
 
-    clock.now += 240  # past expiresIn (minus the 30 s margin)
-    await client.async_get_vehicles()
+    clock.now += 60
+    backend.expire_access()
+    await client.async_get_vehicles()  # 401 -> refresh -> retry succeeds
     assert backend.logins == ["1"] and backend.refreshes == 1
+    assert client.auth.tokens_rejected == 1
+    assert client.auth.last_rejected_token_age == 4 * 3600 + 60
+
+
+def _jwt(exp: float) -> str:
+    import base64, json
+    enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()  # noqa: E731
+    return f"{enc({'alg': 'none'})}.{enc({'exp': exp})}.sig"
+
+
+def test_jwt_expiry():
+    assert auth_mod.jwt_expiry(_jwt(1_900_000_000)) == 1_900_000_000
+    for token in (None, "", "opaque-token", "a.b.c", _jwt("soon")):
+        assert auth_mod.jwt_expiry(token) is None
+
+
+async def test_jwt_exp_is_refreshed_before_it_expires(backend, clock):
+    import time as real_time
+    tokens = iter([_jwt(real_time.time() + 600), _jwt(real_time.time() + 1200)])
+
+    def login(call):
+        token = next(tokens)
+        backend.valid_access.add(token)
+        backend.valid_refresh.add("r")
+        if call["data"]["grant_type"] == "refresh_token":
+            backend.refreshes += 1
+        else:
+            backend.logins.append(call["data"]["override"])
+        return 200, envelope(access_token=token, refresh_token="r", expiresIn=240)
+
+    backend.session.route("POST", const.EP_LOGIN, login)
+    client = _client(backend)
+    await client.async_get_vehicles()
+    assert 500 < client.auth.token_expires_in <= 570
+    clock.now += 580  # inside the 30 s margin before exp
+    await client.async_get_vehicles()
+    assert backend.refreshes == 1
+    assert client.auth.tokens_rejected == 0  # refreshed proactively, no 401
 
 
 async def test_concurrent_requests_share_one_login(backend, clock):
@@ -200,7 +244,7 @@ async def test_concurrent_requests_share_one_login(backend, clock):
 async def test_concurrent_refresh_happens_once(backend, clock):
     client = _client(backend)
     await client.async_get_vehicles()
-    clock.now += 240
+    backend.expire_access()
     await asyncio.gather(*(client.async_get_status(CONTRACT) for _ in range(5)))
     assert backend.refreshes == 1 and backend.logins == ["1"]
 
@@ -256,10 +300,11 @@ async def test_phone_reclaiming_repeatedly_does_not_ping_pong(backend, clock):
     backend.session.route("POST", const.EP_LOGIN, login_then_phone_evicts)
     backend.evict()
 
-    # Poll 1: one forced login; its retry is rejected again and the cooldown
-    # stops a second login -> the poll fails without kicking the phone twice.
-    with pytest.raises(SuzukiSessionTakenOver):
+    # Poll 1: one forced login; its retry is rejected again -> the poll fails
+    # (an API error, not a reauth) without kicking the phone twice.
+    with pytest.raises(SuzukiApiError) as exc:
         await client.async_get_status(CONTRACT)
+    assert exc.value.status == 401
     assert backend.logins == ["1", "1"]
 
     # Further polls inside the cooldown don't log in again.
@@ -321,7 +366,7 @@ async def test_tokens_updated_callback(backend, clock):
     seen = []
     client.auth.on_tokens_updated = lambda: seen.append(client.auth.refresh_token)
     await client.async_get_vehicles()
-    clock.now += 240
+    backend.expire_access()
     await client.async_get_vehicles()
     assert seen == ["refresh-1", "refresh-2"]
     assert client.auth.last_login_at is not None

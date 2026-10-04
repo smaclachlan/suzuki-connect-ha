@@ -35,11 +35,12 @@ from .const import (
     CONF_DEVICE_NAME,
     CONF_ENABLE_EXTENDED,
     CONF_ENABLE_HEALTH,
+    CONF_SLOW_INTERVAL_MINUTES,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_SLOW_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    EXTENDED_REFRESH,
     HEALTH_REFRESH,
     STORAGE_VERSION,
 )
@@ -130,6 +131,13 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self._enable_extended = entry.options.get(CONF_ENABLE_EXTENDED, False)
         self._extended: dict[int, ExtendedData] = {}
         self._extended_at: float | None = None
+        slow_minutes = entry.options.get(CONF_SLOW_INTERVAL_MINUTES)
+        self._slow_interval = (
+            timedelta(minutes=slow_minutes) if slow_minutes else DEFAULT_SLOW_INTERVAL
+        )
+        # The account's vehicle list, refreshed on the slow interval.
+        self._vehicle_list: list[Vehicle] | None = None
+        self._vehicle_list_at: float | None = None
         self.settings: dict[int, VehicleSettings] = {}
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, storage_key(entry.entry_id))
 
@@ -170,7 +178,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self.last_attempt = dt_util.utcnow()
         started = time.monotonic()
         try:
-            selected = self._select_vehicles(await self.client.async_get_vehicles())
+            selected = self._select_vehicles(await self._get_vehicle_list())
             self.vehicles = {v.contract_id: v for v in selected}
             result: dict[int, VehicleData] = {}
             failures: list[str] = []
@@ -212,6 +220,32 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         self.last_error = "; ".join(failures) if failures else None
         self.consecutive_failures = 0
         return SuzukiData(vehicles=result)
+
+    async def _get_vehicle_list(self) -> list[Vehicle]:
+        """The account's vehicles, fetched at startup and then on the slow
+        interval (they rarely change), not on every live poll.
+
+        If a scheduled refresh fails, the cached list is used and the poll
+        carries on; only an auth failure or having no list at all fails it.
+        """
+        now = time.monotonic()
+        if (
+            self._vehicle_list is not None
+            and self._vehicle_list_at is not None
+            and now - self._vehicle_list_at < self._slow_interval.total_seconds()
+        ):
+            return self._vehicle_list
+        try:
+            vehicles = await self.client.async_get_vehicles()
+        except SuzukiAuthError:
+            raise
+        except SuzukiConnectError as err:
+            if self._vehicle_list is None:
+                raise
+            _LOGGER.debug("Vehicle list refresh failed, using cached list: %s", err)
+            return self._vehicle_list
+        self._vehicle_list, self._vehicle_list_at = vehicles, now
+        return vehicles
 
     def _record_failure(self, err: Exception) -> None:
         self.last_error = f"{type(err).__name__}: {err}"
@@ -257,7 +291,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
 
     async def _maybe_fetch_extended(self, contract_ids: list[int]) -> None:
         """Fetch trips, charging history, schedules and subscription when opted
-        in, at most every EXTENDED_REFRESH.
+        in, at most once per slow interval.
 
         Each part is fetched independently: a failure (e.g. an endpoint the
         car's plan doesn't offer) keeps that part's last value and never fails
@@ -268,7 +302,7 @@ class SuzukiConnectCoordinator(DataUpdateCoordinator[SuzukiData]):
         now = time.monotonic()
         if (
             self._extended_at is not None
-            and now - self._extended_at < EXTENDED_REFRESH.total_seconds()
+            and now - self._extended_at < self._slow_interval.total_seconds()
         ):
             return
         succeeded = False

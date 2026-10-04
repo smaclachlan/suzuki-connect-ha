@@ -8,10 +8,17 @@ refresh is rejected, to keep evictions of the owner's phone to a minimum.
 Forced logins are additionally rate-limited (FORCED_LOGIN_COOLDOWN) so that if
 the phone keeps reclaiming the session, a poll fails rather than the two
 devices evicting each other several times a minute.
+
+Token lifetime: like the official app, which ignores ``expiresIn`` and only
+refreshes when a call returns 401, an access token is used until the server
+rejects it. The one exception is a JWT carrying an ``exp`` claim, which is
+refreshed shortly before that time to save a failed request.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import time
 import uuid
 from datetime import datetime, timezone
@@ -77,6 +84,20 @@ def _login_field(payload: dict, name: str) -> Any:
     return value if value not in (None, "") else None
 
 
+def jwt_expiry(token: Optional[str]) -> Optional[float]:
+    """The ``exp`` claim (Unix time) of a JWT, or None if it isn't one.
+
+    The signature is not checked: this is only a hint for when to refresh.
+    """
+    try:
+        payload = str(token).split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        exp = claims.get("exp") if isinstance(claims, dict) else None
+        return float(exp) if isinstance(exp, (int, float)) else None
+    except (IndexError, ValueError, TypeError):
+        return None
+
+
 class SuzukiAuth:
     """Holds credentials and the current token; performs login/refresh."""
 
@@ -102,8 +123,10 @@ class SuzukiAuth:
 
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
-        # time.monotonic() deadline, immune to wall-clock jumps (NTP, DST).
-        self._expires_at: float = 0.0
+        # time.monotonic() deadline, immune to wall-clock jumps (NTP, DST);
+        # None means no known expiry (use the token until it's rejected).
+        self._expires_at: Optional[float] = None
+        self._token_obtained_at: Optional[float] = None
         # Serialises login/refresh so concurrent callers share one attempt.
         self._lock = asyncio.Lock()
         self._last_forced_login: Optional[float] = None
@@ -113,6 +136,11 @@ class SuzukiAuth:
         # When the last login/refresh happened (UTC), for diagnostics only.
         self.last_login_at: Optional[datetime] = None
         self.last_refresh_at: Optional[datetime] = None
+        # Token lifetime evidence, for diagnostics: the server's (unused)
+        # expiresIn, and how long tokens actually lasted before a 401.
+        self.reported_expires_in: Any = None
+        self.tokens_rejected = 0
+        self.last_rejected_token_age: Optional[float] = None  # seconds
 
     # -- public ---------------------------------------------------------
     @property
@@ -150,10 +178,18 @@ class SuzukiAuth:
 
     @property
     def token_expires_in(self) -> Optional[float]:
-        """Seconds until the current access token is considered expired."""
-        if not self.access_token:
+        """Seconds until the current access token is refreshed proactively;
+        None when it has no known expiry (it's used until rejected)."""
+        if not self.access_token or self._expires_at is None:
             return None
         return max(0.0, self._expires_at - 30 - time.monotonic())
+
+    @property
+    def token_age(self) -> Optional[float]:
+        """Seconds since the current access token was issued."""
+        if not self.access_token or self._token_obtained_at is None:
+            return None
+        return time.monotonic() - self._token_obtained_at
 
     def invalidate(self, token: str) -> None:
         """Drop ``token`` after the server rejected it.
@@ -163,8 +199,10 @@ class SuzukiAuth:
         just obtained (which would cause a second login).
         """
         if self.access_token == token:
+            self.tokens_rejected += 1
+            self.last_rejected_token_age = self.token_age
             self.access_token = None
-            self._expires_at = 0.0
+            self._expires_at = None
 
     async def async_login(self, *, override: bool = False) -> None:
         """Password login. override=True evicts whatever device is logged in."""
@@ -185,7 +223,9 @@ class SuzukiAuth:
 
     # -- internal -------------------------------------------------------
     def _token_valid(self) -> bool:
-        return bool(self.access_token) and time.monotonic() < self._expires_at - 30
+        if not self.access_token:
+            return False
+        return self._expires_at is None or time.monotonic() < self._expires_at - 30
 
     def _check_forced_login_allowed(self) -> None:
         if self._last_forced_login is None:
@@ -232,17 +272,19 @@ class SuzukiAuth:
         refresh = _login_field(data, "refresh_token")
         if refresh:
             self.refresh_token = refresh
-        # expiresIn units are unconfirmed (observed 240); treat as seconds and
-        # clamp to a sane window so a surprising value can't make us either
-        # hammer refreshes or hold a token far past its real lifetime. A 401 on
-        # any call still triggers a reactive refresh regardless.
-        try:
-            expires_in = float(
-                _login_field(data, "expiresIn") or _login_field(data, "expires_in") or 240
-            )
-        except (TypeError, ValueError):
-            expires_in = 240.0
-        self._expires_at = time.monotonic() + max(60.0, min(expires_in, 3600.0))
+        now = time.monotonic()
+        self._token_obtained_at = now
+        # expiresIn (observed 240, units unknown) is recorded but not used: the
+        # official app ignores it too and refreshes only on a 401.
+        self.reported_expires_in = _login_field(data, "expiresIn")
+        exp = jwt_expiry(token)
+        if exp is None:
+            self._expires_at = None
+        else:
+            # Wall-clock exp converted once to the monotonic clock. Never less
+            # than a minute, so a skewed clock can't cause a refresh loop.
+            remaining = exp - datetime.now(timezone.utc).timestamp()
+            self._expires_at = now + max(60.0, remaining)
 
     async def _post_form(self, path: str, fields: dict[str, str]) -> dict:
         # aiohttp sets Content-Type: application/x-www-form-urlencoded for a
